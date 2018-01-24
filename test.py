@@ -1,8 +1,13 @@
+import numpy as np 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F 
 from torch.autograd import Variable
+import inspect
+from torch.nn.utils import rnn
+from utils_pad import pack_sequence
+from utils_pad import pad_sequence
 from utils_pad import prepare_sequence
 
 FloatTensor = torch.cuda.FloatTensor
@@ -18,10 +23,6 @@ class DQN(nn.Module):
         self.gru_low = nn.GRU(input_size, hidden_size_low, batch_first=False, bidirectional=False)
         self.gru_high = nn.GRU(hidden_size_low, hidden_size_high, batch_first=True, bidirectional=False)
 
-        self.state_fc = nn.Linear(hidden_size_high, 128)
-        self.cluster_fc = nn.Linear(hidden_size_high, 128)
-        
-
     def init_hidden(self):
         return Variable(torch.zeros(1,1,self.hidden_size_low).type(FloatTensor)), Variable(torch.zeros(1,1,self.hidden_size_high).type(FloatTensor))
 
@@ -34,21 +35,17 @@ class DQN(nn.Module):
         return state_rep
 
 
+# a = Variable(torch.randn(5,10)).type(FloatTensor)
+# b = Variable(torch.randn(4,10)).type(FloatTensor)
+# c = Variable(torch.randn(3,10)).type(FloatTensor)
+# packed_seq = pack_sequence([a, b, c])
 
+features = np.random.randn(10,20)
+partition = [[1,3,5,7],[2],[0,4],[6,8],[9]]
 
-model = DQN()
+input = prepare_sequence(features, partition)
+
+model = DQN(20,5,3)
 model.cuda()
 
-
-gamma = 1
-eps_start = 0.95
-eps_end = 0.05
-
-n_episodes = 1
-
-for i_episode in range(n_episodes):
-    features, partition = env.reset()
-
-
-
-
+h = model(input)
