@@ -4,13 +4,12 @@ import torch
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence
 
-# from .._functions.packing import PackPadded
-# from torch.nn._functions.packing import PackPadded
+FloatTensor = torch.cuda.FloatTensor
 
-def prepare_sequence(features, partition):
+def prepare_sequence(features, partition, volatile=False):
     features = torch.from_numpy(features)
     partition = sorted(partition, key=len, reverse=True)
-    seq_list = [Variable(features[row,:]).type(FloatTensor) for row in partition]
+    seq_list = [Variable(features[row,:], volatile=volatile).type(FloatTensor) for row in partition]
     packed_seq = pack_sequence(seq_list)
 
     return packed_seq
