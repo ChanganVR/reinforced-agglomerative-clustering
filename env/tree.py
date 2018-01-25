@@ -21,21 +21,18 @@ class Tree(object):
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num
         self.counter = len(labels)
+        self.last_assignment_dict = {}
 
     def is_done(self):
         return len(self.root.data) == self.class_num
 
     def merge(self, a, b):
         # first check if a and b is valid
-        cluster_a = None
-        cluster_b = None
-        for i in range(len(self.root.data)):
-            if self.root.data[i].number == a:
-                cluster_a = self.root.data[i]
-            elif self.root.data[i].number == b:
-                cluster_b = self.root.data[i]
-        if not cluster_a or not cluster_b:
+        if a not in range(len(self.root.data)) or b not in range(len(self.root.data)):
             raise ValueError("Action does not exist")
+        else:
+            cluster_a = self.root.data[self.last_assignment_dict[a]]
+            cluster_b = self.root.data[self.last_assignment_dict[b]]
         # Todo: when to terminate the episode
         if self.is_done():
             raise ValueError("Episode is terminated")
@@ -89,16 +86,23 @@ class Tree(object):
 
     def get_assignment(self):
         """
-        Return a list of assignment [cluster.no of first leaf, cluster.no of second leaf, ...]
+        Return a list of assignment [[cluster 1 elements], [cluster 2 elements], ...]
+        the list is sorted according to the size of each cluster and each cluster is sorted wrt its element number
         """
-        assignments = [0] * len(self.labels)
+        assignments = []
         for i in range(len(self.root.data)):
             # each child in root.data is current cluster
             if self.root.data[i].data is None:
-                assignments[self.root.data[i].number] = self.root.data[i].number
+                assignments.append([self.root.data[i].number])
             else:
-                for j in range(len(self.root.data[i].data)):
-                    assignments[self.root.data[i].data[j]] = self.root.data[i].number
+                assignments.append(sorted(self.root.data[i].data))
 
-        return assignments
+        # sort assignments
+        sorted_assignments = sorted(assignments, key=len, reverse=True)
+        self.last_assignment_dict = {}
+        # last assignment dict stores the original indices of new cluster order
+        for i, cluster in enumerate(sorted_assignments):
+            self.last_assignment_dict[i] = assignments.index(cluster)
+
+        return sorted_assignments
 

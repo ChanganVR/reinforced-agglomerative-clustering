@@ -19,9 +19,13 @@ class Action(object):
 
 
 class State(object):
-    def __init__(self, cluster_assignments, features):
+    def __init__(self, cluster_assignments):
+        """
+        Only cluster assignments will be passed from environment to agent
+        Features are passed when the env is reset
+        :param cluster_assignments:
+        """
         self.cluster_assignments = cluster_assignments
-        self.features = features
 
     def __str__(self):
         print(self.cluster_assignments)
@@ -75,7 +79,7 @@ class Env(object):
         # create a new tree using sampled data
         self.tree = Tree(self.class_num, sampled_labels)
         assignments = self.tree.get_assignment()
-        return State(assignments, self.sampled_features)
+        return State(assignments), self.sampled_features
 
     def step(self, action):
         """
@@ -90,9 +94,9 @@ class Env(object):
         reward = self.tree.merge(action.a, action.b)
         assignments = self.tree.get_assignment()
         if self.train:
-            return reward, State(assignments, self.sampled_features)
+            return reward, State(assignments)
         else:
-            return State(assignments, self.sampled_features)
+            return State(assignments)
 
 
 def mnist_read(train, path):
