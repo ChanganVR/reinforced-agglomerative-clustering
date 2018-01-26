@@ -47,7 +47,8 @@ def select_action():
     n_action = n_cluster*(n_cluster-1)/2
 
     sample = random.random()
-    eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*steps_done/eps_decay)
+    # eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*steps_done/eps_decay)
+    eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*i_episode/eps_decay)
     if sample > eps_thresh:
         action = model(input).data.max(0)[1]
     else:
@@ -103,7 +104,7 @@ def optimize():
 gamma = 1
 eps_start = 0.95
 eps_end = 0.05
-eps_decay = 2000
+eps_decay = 1000
 batch_size = 50
 
 n_episodes = 1000
@@ -112,17 +113,19 @@ sampling_size = 10
 t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size)
 
-model = DQRN(784,32,32)
-# model = CONV_DQRN(64,64)
+# model = DQRN(784,32,32)
+model = CONV_DQRN(128,32,32)
 model.cuda()
 
-optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
+optimizer = optim.RMSprop(model.parameters(), lr=0.01)
 memory = ReplayMemory(10000)
 
 steps_done = 0
 for i_episode in range(n_episodes):
     clustering_env.set_seed(0)
     partition, images = clustering_env.reset()
+
+    random.seed(i_episode)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size,-1))
     images = torch.from_numpy(images)

@@ -65,22 +65,22 @@ class DQRN(nn.Module):
         return q_table
 
 class CONV_DQRN(nn.Module):
-    def __init__(self, hidden_size_low, hidden_size_high):
+    def __init__(self, hidden_fc, hidden_size_low, hidden_size_high):
         super(CONV_DQRN, self).__init__()
         self.conv1 = nn.Conv2d(1,32,kernel_size=5)
         self.conv2 = nn.Conv2d(32,64,kernel_size=5)
-        self.fc = nn.Linear(1024,256)
+        self.fc = nn.Linear(1024,hidden_fc)
 
         self.hidden_size_low = hidden_size_low
         self.hidden_size_high = hidden_size_high
         self.hidden_low, self.hidden_high = self.init_hidden()
-        self.gru_low = nn.GRU(256, hidden_size_low, batch_first=False, bidirectional=False)
+        self.gru_low = nn.GRU(hidden_fc, hidden_size_low, batch_first=False, bidirectional=False)
         self.gru_high = nn.GRU(hidden_size_low, hidden_size_high, batch_first=True, bidirectional=False)
 
-        self.state_fc = nn.Linear(hidden_size_high, 64)
-        self.cluster_fc = nn.Linear(hidden_size_low, 64)
-        self.agent_fc1 = nn.Linear(128, 64)
-        self.agent_fc2 = nn.Linear(64, 1)
+        self.state_fc = nn.Linear(hidden_size_high, 16)
+        self.cluster_fc = nn.Linear(hidden_size_low, 16)
+        self.agent_fc1 = nn.Linear(32, 32)
+        self.agent_fc2 = nn.Linear(32, 1)
 
     def init_hidden(self):
         return Variable(torch.zeros(1,1,self.hidden_size_low).type(FloatTensor)), Variable(torch.zeros(1,1,self.hidden_size_high).type(FloatTensor))
