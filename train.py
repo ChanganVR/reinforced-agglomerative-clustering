@@ -74,9 +74,12 @@ def optimize():
         if next_partition is None:
             target_q = reward
         else:
-            next_input = prepare_sequence(replay_partition, images, volatile=True)
+            # next_input = prepare_sequence(replay_partition, images, volatile=True)
+            images.volatile = True
+            next_input = [next_partition, images]
             next_q = model(next_input).max(0)[0]
             next_q.volatile = False
+            images.volatile = False
             target_q = reward + gamma*next_q
 
         F.smooth_l1_loss(q, target_q)
@@ -90,7 +93,7 @@ def optimize():
 gamma = 1
 eps_start = 0.95
 eps_end = 0.05
-eps_decay = 200
+eps_decay = 2000
 batch_size = 200
 
 n_episodes = 1000
@@ -103,7 +106,7 @@ clustering_env = env.Env(data_dir, sampling_size)
 model = CONV_DQRN(32,32)
 model.cuda()
 
-optimizer = optim.RMSprop(model.parameters())
+optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
 memory = ReplayMemory(10000)
 
 steps_done = 0
