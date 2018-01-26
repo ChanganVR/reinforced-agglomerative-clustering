@@ -58,35 +58,43 @@ def optimize():
     if len(memory) < batch_size:
         return
 
+    all_replay = memory.sample(batch_size)
     for i_replay in range(batch_size):
-        exp = ReplayMemory.sample(1)
+        replay = all_replay[i_replay]
+        # print len(replay)
 
-        partition = exp[0]
-        next_partition = exp[2]
-        action = exp[1]
-        reward = exp[3]
-        images = exp[4]
+        replay_partition = replay[0]
+        replay_next_partition = replay[2]
+        
+        replay_action = Variable(replay[1])
+        replay_reward = Variable(replay[3])
+        replay_images = replay[4]
         
         # input = prepare_sequence(replay_partition, images)
-        input = [replay_partition, images]
-        q = model(input)[action]
+        replay_input = [replay_partition, replay_images]
+        q = model(replay_input)[replay_action]
 
-        if next_partition is None:
-            target_q = reward
+        if replay_next_partition is None:
+            target_q = replay_reward
         else:
             # next_input = prepare_sequence(replay_partition, images, volatile=True)
-            images.volatile = True
-            next_input = [next_partition, images]
-            next_q = model(next_input).max(0)[0]
-            next_q.volatile = False
-            images.volatile = False
-            target_q = reward + gamma*next_q
+            # replay_images.volatile = True
+            replay_next_input = [replay_next_partition, replay_images]
+            result = model(replay_next_input).max(0)[0]
+            # next_q = Variable(torch.zeros(1).type(FloatTensor), volatile=True)
+            next_q = Variable(result.data.type(FloatTensor), volatile=True)
+            # next_q[:] = result[:]
 
-        F.smooth_l1_loss(q, target_q)
+            next_q.volatile = False
+            # replay_images.volatile = False
+            target_q = replay_reward + gamma*next_q
+
+
+        loss = F.smooth_l1_loss(q, target_q)
         optimizer.zero_grad()
         loss.backward()
-        # for param in model.parameters():
-        #     param.grad.data.clamp(-1,1)
+        for param in model.parameters():
+            param.grad.data.clamp(-1,1)
         optimizer.step()
 
 
@@ -103,7 +111,7 @@ t_stop = 30
 clustering_env = env.Env(data_dir, sampling_size)
 
 # model = DQRN(784,32,32)
-model = CONV_DQRN(32,32)
+model = CONV_DQRN(64,64)
 model.cuda()
 
 optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
@@ -134,6 +142,8 @@ for i_episode in range(n_episodes):
         exp = [partition, action, next_partition, reward, images]
         memory.push(exp)
         steps_done += 1
+
+        optimize()
 
         if t == t_stop:
             next_partition = None

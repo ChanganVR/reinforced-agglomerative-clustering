@@ -109,7 +109,7 @@ class CONV_DQRN(nn.Module):
 
         cluster_rep = F.relu(self.cluster_fc(cluster_rep))
         state_rep = F.relu(self.state_fc(state_rep))
-        q_table = Variable(torch.zeros(n_cluster*(n_cluster-1)/2))
+        q_table = Variable(torch.zeros(n_cluster*(n_cluster-1)/2).type(FloatTensor))
 
         count = 0
         for i in range(n_cluster):
