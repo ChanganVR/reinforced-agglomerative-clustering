@@ -23,10 +23,10 @@ class DQRN(nn.Module):
         self.gru_low = nn.GRU(input_size, hidden_size_low, batch_first=False, bidirectional=False)
         self.gru_high = nn.GRU(hidden_size_low, hidden_size_high, batch_first=True, bidirectional=False)
 
-        self.state_fc = nn.Linear(hidden_size_high, 64)
-        self.cluster_fc = nn.Linear(hidden_size_low, 64)
-        self.agent_fc1 = nn.Linear(128, 64)
-        self.agent_fc2 = nn.Linear(64, 1)
+        self.state_fc = nn.Linear(hidden_size_high, 16)
+        self.cluster_fc = nn.Linear(hidden_size_low, 16)
+        self.agent_fc1 = nn.Linear(32, 32)
+        self.agent_fc2 = nn.Linear(32, 1)
 
     def init_hidden(self):
         return Variable(torch.zeros(1,1,self.hidden_size_low).type(FloatTensor)), Variable(torch.zeros(1,1,self.hidden_size_high).type(FloatTensor))
@@ -48,7 +48,7 @@ class DQRN(nn.Module):
 
         cluster_rep = F.relu(self.cluster_fc(cluster_rep))
         state_rep = F.relu(self.state_fc(state_rep))
-        q_table = Variable(torch.zeros(n_cluster*(n_cluster-1)/2))
+        q_table = Variable(torch.zeros(n_cluster*(n_cluster-1)/2).type(FloatTensor))
 
         count = 0
         for i in range(n_cluster):

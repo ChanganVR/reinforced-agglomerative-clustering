@@ -102,16 +102,16 @@ gamma = 1
 eps_start = 0.95
 eps_end = 0.05
 eps_decay = 2000
-batch_size = 200
+batch_size = 50
 
 n_episodes = 1000
 data_dir = 'dataset'
-sampling_size = 50
-t_stop = 30
+sampling_size = 10
+t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size)
 
-# model = DQRN(784,32,32)
-model = CONV_DQRN(64,64)
+model = DQRN(784,32,32)
+# model = CONV_DQRN(64,64)
 model.cuda()
 
 optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
