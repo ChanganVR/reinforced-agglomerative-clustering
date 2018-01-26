@@ -1,4 +1,5 @@
 import numpy as np 
+import random
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -24,7 +25,7 @@ ByteTensor = torch.cuda.ByteTensor
 features = np.random.randn(10,20)
 partition = [[1,3,5,7],[2],[0,4],[6,8],[9]]
 
-# input = prepare_sequence(features, partition)
+# input = prepare_sequence(partition, features)
 
 # model = DQRN(20,5,3)
 # model.cuda()

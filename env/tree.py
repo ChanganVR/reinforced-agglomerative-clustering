@@ -16,7 +16,7 @@ class Node(object):
 class Tree(object):
     def __init__(self, class_num, labels):
         self.labels = labels
-        print(labels)
+        # print(labels)
         leaf_nodes = [Node(i, None) for i in range(len(labels))]
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num
@@ -67,8 +67,8 @@ class Tree(object):
         """
         # calculate purity before merging
         total_num = len(new_cluster.data)
-        purity_before = (self.dominant_num(cluster_a) + self.dominant_num(cluster_b))/total_num
-        purity_after = self.dominant_num(new_cluster)/total_num
+        purity_before = (self.dominant_num(cluster_a) + self.dominant_num(cluster_b))/(total_num+0.0)
+        purity_after = self.dominant_num(new_cluster)/(total_num+0.0)
         # if merging is not correct, then purity drops and reward will be negative
         reward = purity_after - purity_before
         return reward
