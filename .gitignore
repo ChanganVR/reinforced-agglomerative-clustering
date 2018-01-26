@@ -1,3 +1,4 @@
 *-ubyte
 .idea/
 __pycache__/
+*.pyc

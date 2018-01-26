@@ -33,7 +33,7 @@ class State(object):
 
 
 class Env(object):
-    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', train=True):
+    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', train=True, reward='local_purity'):
         if dataset == 'mnist':
             images, labels = mnist_read(train, data_dir)
             label_dict = defaultdict(list)
@@ -53,6 +53,8 @@ class Env(object):
         self.sampled_features = []
         self.sampled_labels = []
         self.tree = None
+        assert reward in ['local_purity', 'global_purity', 'uniform']
+        self.reward = reward
 
     def set_seed(self, seed):
         random.seed(seed)
@@ -77,9 +79,10 @@ class Env(object):
         self.sampled_labels = sampled_labels
 
         # create a new tree using sampled data
-        self.tree = Tree(self.class_num, sampled_labels)
+        self.tree = Tree(self.class_num, sampled_labels, self.reward)
         assignments = self.tree.get_assignment()
-        return State(assignments), self.sampled_features
+        purity = self.tree.current_purity()
+        return State(assignments), self.sampled_features, purity
 
     def step(self, action):
         """
@@ -93,10 +96,11 @@ class Env(object):
             return None, None
         reward = self.tree.merge(action.a, action.b)
         assignments = self.tree.get_assignment()
+        purity = self.tree.current_purity()
         if self.train:
-            return reward, State(assignments)
+            return reward, State(assignments), purity
         else:
-            return State(assignments)
+            return State(assignments), purity
 
 
 def mnist_read(train, path):

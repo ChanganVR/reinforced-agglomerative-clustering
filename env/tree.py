@@ -1,3 +1,5 @@
+from __future__ import division
+from __future__ import print_function
 from collections import Counter
 
 
@@ -14,14 +16,16 @@ class Node(object):
 
 
 class Tree(object):
-    def __init__(self, class_num, labels):
+    def __init__(self, class_num, labels, reward):
         self.labels = labels
+        self.leaf_num = len(self.labels)
         # print(labels)
         leaf_nodes = [Node(i, None) for i in range(len(labels))]
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num
         self.counter = len(labels)
         self.last_assignment_dict = {}
+        self.reward = reward
 
     def is_done(self):
         return len(self.root.data) == self.class_num
@@ -60,18 +64,35 @@ class Tree(object):
 
     def compute_reward(self, cluster_a, cluster_b, new_cluster):
         """
+        local_purity:   compute local purity/entropy change
+        global_purity:  compute global purity change
+        uniform:        +1 for successful merging, 0 for unsuccessful merging, terminate (times size factor)
+
         Define reward as the purity difference between before merging and after merging
         :param cluster_a:
         :param cluster_b:
         :return:
         """
-        # calculate purity before merging
-        total_num = len(self.root.data)
-        purity_before = (self.dominant_num(cluster_a) + self.dominant_num(cluster_b))/(total_num+0.0)
-        purity_after = self.dominant_num(new_cluster)/(total_num+0.0)
-        # if merging is not correct, then purity drops and reward will be negative
-        reward = purity_after - purity_before
+        dominant_num_before = (self.dominant_num(cluster_a) + self.dominant_num(cluster_b))
+        dominant_num_after = self.dominant_num(new_cluster)
+        if self.reward == 'uniform':
+            if dominant_num_before == dominant_num_after:
+                reward = 1
+            else:
+                reward = 0
+        else:
+            if self.reward == 'local_purity':
+                total_num = len(new_cluster.data)
+            else:
+                total_num = self.leaf_num
+            # if merging is not correct, then purity drops and reward will be negative
+            reward = (dominant_num_after - dominant_num_before) / total_num
+
         return reward
+
+    def current_purity(self):
+        dominant_nums = [self.dominant_num(cluster) for cluster in self.root.data]
+        return sum(dominant_nums) / self.leaf_num
 
     def dominant_num(self, cluster):
         if cluster.data is None:
