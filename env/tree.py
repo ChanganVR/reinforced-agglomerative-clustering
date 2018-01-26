@@ -66,7 +66,7 @@ class Tree(object):
         :return:
         """
         # calculate purity before merging
-        total_num = len(new_cluster.data)
+        total_num = len(self.root.data)
         purity_before = (self.dominant_num(cluster_a) + self.dominant_num(cluster_b))/(total_num+0.0)
         purity_after = self.dominant_num(new_cluster)/(total_num+0.0)
         # if merging is not correct, then purity drops and reward will be negative
