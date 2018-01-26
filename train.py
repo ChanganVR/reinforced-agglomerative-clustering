@@ -134,7 +134,7 @@ for i_episode in range(n_episodes):
 
         if t == t_stop:
             next_partition = None
-            # print 'episode reward:', episode_reward
+            print 'episode reward:', episode_reward
             # print 'reward history:', reward_list
             break
 
