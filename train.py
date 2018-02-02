@@ -49,7 +49,7 @@ class ReplayMemory():
         return len(self.memory)
 
 # @profile
-def select_action(train=False):
+def select_action(phase='train'):
     # input = prepare_sequence(partition, images, volatile=True)
     input = [partition, images]
     n_cluster = len(partition)
@@ -58,7 +58,7 @@ def select_action(train=False):
     sample = random.random()
     # eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*steps_done/eps_decay)
     eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
-    if (not train) or sample > eps_thresh:
+    if (phase == 'test') or sample > eps_thresh:
         action = model(input).data.max(0)[1]
     else:
         action = LongTensor([random.randrange(n_action)])
@@ -67,7 +67,7 @@ def select_action(train=False):
 
 # @profile
 def optimize():
-    if not memory.is_full():
+    if len(memory) < 20*batch_size:
         return
 
     all_replay = memory.sample(batch_size)
@@ -115,14 +115,16 @@ eps_start = 0.95
 eps_end = 0.05
 # eps_start = 1
 # eps_end = 1
-eps_decay = 2000
+eps_decay = 1000
 batch_size = 100
 
 n_episodes = 5000
 data_dir = 'dataset'
 sampling_size = 30
-t_stop = sampling_size-6
+t_stop = 9
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
+train_max = 5000
+test_max = 1
 
 model = DQRN(sampling_size,784,32,32)
 # model = CONV_DQRN(128, 32, 32)
@@ -132,22 +134,35 @@ optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
 memory = ReplayMemory(10000)
 
 steps_done = 0
+train_count = 0
+test_count = 0
+
+all_test_purity = []
+test_purity = [0]*test_max
+
 for i_episode in range(n_episodes):
-    clustering_env.set_seed(0)
+    phase = 'train' if (i_episode % 10 < 9) else 'test'
+
+    if phase == 'train':
+        clustering_env.set_seed(0)
+        train_count += 1
+    else:
+        clustering_env.set_seed(0)
+        test_count += 1
+
     partition, images, _ = clustering_env.reset()
 
-    random.seed(i_episode)
+    random.seed()
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
-    # print images.type
 
     episode_reward = 0
     reward_list = []
-    train = True if i_episode%10!=0 else False
+
 
     for t in count():
-        action = select_action(train)
+        action = select_action(phase)
 
         action_pair = pair_from_index(action[0])
         reward, next_partition, purity = clustering_env.step(action_pair)
@@ -161,7 +176,7 @@ for i_episode in range(n_episodes):
             final_partition = next_partition
             next_partition = None
 
-        if train:
+        if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
             optimize()
@@ -169,11 +184,12 @@ for i_episode in range(n_episodes):
         steps_done += 1
 
         if t == t_stop:
-            if not train:
-                print('episode', i_episode, 'episode reward:', episode_reward, 'episode purity:', purity)
-                # labels = clustering_env.sampled_labels
-                # print([[labels[x] for x in cluster] for cluster in final_partition])
-            # print 'reward history:', reward_list
+            if phase == 'test':
+                test_purity[test_count%test_max] = purity
+                if test_count%test_max == test_max-1:
+                    avg_purity = sum(test_purity)/test_max
+                    all_test_purity.append(avg_purity)
+                    print('episode', i_episode, 'average test purity:', avg_purity)
             break
 
         partition = next_partition
