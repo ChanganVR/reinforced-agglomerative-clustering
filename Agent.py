@@ -1,4 +1,4 @@
-import numpy as np 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -30,7 +30,7 @@ class DQRN(nn.Module):
         self.agent_fc1 = nn.Linear(64, 32)
         self.agent_fc2 = nn.Linear(32, 1)
 
-        n_action = n_sample*(n_sample-1)/2
+        n_action = int(n_sample*(n_sample-1)/2)
         self.row_idx = LongTensor([0]*n_action)
         self.col_idx = LongTensor([0]*n_action)
         count = 0
@@ -74,7 +74,7 @@ class DQRN(nn.Module):
         #         count += 1
         # q_table = nn.Softmax()(q_table)
 
-        n_action = n_cluster*(n_cluster-1)/2
+        n_action = int(n_cluster*(n_cluster-1)/2)
         row_idx = self.row_idx[:n_action]
         col_idx = self.col_idx[:n_action]
         merge_cluster = cluster_rep[row_idx,:]+cluster_rep[col_idx,:]

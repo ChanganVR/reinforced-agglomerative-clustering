@@ -3,6 +3,7 @@ from __future__ import division
 import numpy as np
 import random
 import math
+import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -144,13 +145,11 @@ for i_episode in range(n_episodes):
     phase = 'train' if (i_episode % 10 < 9) else 'test'
 
     if phase == 'train':
-        clustering_env.set_seed(0)
+        partition, images = clustering_env.reset(0)
         train_count += 1
     else:
-        clustering_env.set_seed(0)
+        partition, images = clustering_env.reset(1)
         test_count += 1
-
-    partition, images, _ = clustering_env.reset()
 
     random.seed()
     partition = partition.cluster_assignments
@@ -160,8 +159,9 @@ for i_episode in range(n_episodes):
     episode_reward = 0
     reward_list = []
 
-
+    start = time.time()
     for t in count():
+
         action = select_action(phase)
 
         action_pair = pair_from_index(action[0])
@@ -189,7 +189,10 @@ for i_episode in range(n_episodes):
                 if test_count%test_max == test_max-1:
                     avg_purity = sum(test_purity)/test_max
                     all_test_purity.append(avg_purity)
-                    print('episode', i_episode, 'average test purity:', avg_purity)
+                    print('Episode {} average test purity: {:.2f}'.format(i_episode, avg_purity))
             break
 
         partition = next_partition
+
+    if len(memory) > 20*batch_size:
+        print('Episode {} takes {:.2f}s'.format(i_episode, time.time()-start))
