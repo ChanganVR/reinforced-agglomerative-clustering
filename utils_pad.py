@@ -3,16 +3,55 @@ from collections import namedtuple
 import torch
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence
+import itertools
+import numpy as np
+import collections
 
 FloatTensor = torch.cuda.FloatTensor
+LongTensor = torch.cuda.LongTensor
+ByteTensor = torch.cuda.ByteTensor
+
+def get_partition_length(partition):
+    return len(list(itertools.chain.from_iterable(partition)))
+
+def sort_partition(partition):
+    cluster_size = [len(cluster) for cluster in partition]
+    argsort = sorted(range(len(cluster_size)), reverse=True, key=cluster_size.__getitem__)
+    inversed_argsort = sorted(range(len(argsort)), key=argsort.__getitem__)
+    sorted_partition = [partition[x] for x in argsort]
+
+    return sorted_partition, argsort, inversed_argsort
+
+def merge_partition(partition_batch):
+    batch_size = len(partition_batch)
+    cluster_count = [len(partition) for partition in partition_batch]
+    cluster_count_cumsum = [0] + np.cumsum(cluster_count).tolist()
+    partition_member = [range(cluster_count_cumsum[x], cluster_count_cumsum[x]+cluster_count[x]) for x in range(batch_size)]
+
+    all_cluster = list(itertools.chain.from_iterable(partition_batch))
+    cluster_owner = [owner_id for owner_id,partition in enumerate(partition_batch) for cluster in partition]
+
+    all_cluster_sorted, cluster_argsort, inversed_argsort = sort_partition(all_cluster)
+    cluster_owner_sorted = [cluster_owner[x] for x in cluster_argsort]
+    # cluster_argsort = sorted(range(len(cluster_length)), reverse=True, key=cluster_length.__getitem__)
+    # all_cluster_sorted = [all_cluster[x] for x in cluster_argsort]
+    # inversed_argsort = sorted(range(len(cluster_argsort)), key=cluster_argsort.__getitem__)
+
+    partition_cumsum = [0] + np.cumsum([get_partition_length(p) for p in partition_batch]).tolist()
+    all_cluster_sorted = [[x+partition_cumsum[cluster_owner_sorted[id]] for x in cluster] for id,cluster in enumerate(all_cluster_sorted)]
+
+    return all_cluster_sorted, inversed_argsort, partition_member
+
 
 def prepare_sequence(partition, features, volatile=False):
     # features = torch.from_numpy(features)
     # partition = sorted(partition, key=len, reverse=True)
-    seq_list = [Variable(features[row,:], volatile=volatile).type(FloatTensor) for row in partition]
+
+    seq_list = [Variable(features[LongTensor(row),:], volatile=volatile).type(FloatTensor) for row in partition]
     packed_seq = pack_sequence(seq_list)
 
     return packed_seq
+
 
 def pad_sequence(sequences, batch_first=False):
     r"""Pad a list of variable length Variables with zero
@@ -110,3 +149,7 @@ def pack_sequence(sequences):
         a :class:`PackedSequence` object
     """
     return pack_padded_sequence(pad_sequence(sequences), [v.size(0) for v in sequences])
+
+if __name__ == '__main__':
+    partition_batch = [[[0,1,3],[2]],[[0,3],[1,2]],[[0,1,2,3,4,5],[0,1]]]
+    print(merge_partition(partition_batch))

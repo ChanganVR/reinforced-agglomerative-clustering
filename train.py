@@ -15,9 +15,14 @@ from env import env
 from itertools import count
 
 
-FloatTensor = torch.cuda.FloatTensor
-LongTensor = torch.cuda.LongTensor
-ByteTensor = torch.cuda.ByteTensor
+if 1:
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+    ByteTensor = torch.cuda.ByteTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+    ByteTensor = torch.ByteTensor
 
 
 def pair_from_index(index):
@@ -51,7 +56,7 @@ class ReplayMemory():
 # @profile
 def select_action(phase='train'):
     # input = prepare_sequence(partition, images, volatile=True)
-    input = [partition, images]
+    input = [[partition], Variable(images)]
     n_cluster = len(partition)
     n_action = n_cluster * (n_cluster - 1) / 2
 
@@ -59,7 +64,7 @@ def select_action(phase='train'):
     # eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*steps_done/eps_decay)
     eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
     if (phase == 'test') or sample > eps_thresh:
-        action = model(input).data.max(0)[1]
+        action = model(input)[0].data.max(0)[1]
     else:
         action = LongTensor([random.randrange(n_action)])
 
@@ -73,7 +78,6 @@ def optimize():
     all_replay = memory.sample(batch_size)
     for i_replay in range(batch_size):
         replay = all_replay[i_replay]
-        # print len(replay)
 
         replay_partition = replay[0]
         replay_next_partition = replay[2]
@@ -82,26 +86,16 @@ def optimize():
         replay_reward = Variable(replay[3])
         replay_images = replay[4]
 
-        # input = prepare_sequence(replay_partition, images)
         replay_input = [replay_partition, replay_images]
         q = model(replay_input)[replay_action]
 
         if replay_next_partition is None:
             target_q = replay_reward
         else:
-            # next_input = prepare_sequence(replay_partition, images, volatile=True)
-            # replay_images.volatile = True
             replay_next_input = [replay_next_partition, replay_images]
             result = model(replay_next_input).max(0)[0]
-            # next_q = Variable(torch.zeros(1).type(FloatTensor), volatile=True)
             next_q = Variable(result.data, requires_grad=False)
-            # next_q[:] = result[:]
-
-            # next_q.volatile = False
-            # replay_images.volatile = False
             target_q = replay_reward + gamma * next_q
-
-        # q.register_hook(print)
 
         loss = F.smooth_l1_loss(q, target_q)
         optimizer.zero_grad()
@@ -110,24 +104,63 @@ def optimize():
             param.grad.data.clamp(-1, 1)
         optimizer.step()
 
+def optimize_batch():
+    if len(memory) < 20*batch_size:
+        return
+
+    replay_batch = memory.sample(batch_size)
+    replay_partition = [replay[0] for replay in replay_batch]
+    replay_next_partition = [replay[2] for replay in replay_batch]
+
+    replay_reward = Variable(torch.cat([replay[3] for replay in replay_batch]))
+    replay_images = torch.cat([Variable(replay[4]) for replay in replay_batch])
+
+    replay_input = [replay_partition, replay_images]
+    replay_action = Variable(torch.cat([replay[1] for replay in replay_batch]))
+    # replay_action_count = LongTensor([len(partition) for partition in replay_partition])
+    # replay_action_cumsum = torch.cumsum(replay_action_count)
+    # replay_action_cumsum = torch.cat([LongTensor([0]), replay_action_cumsum[:-1]])
+    # replay_action = Variable([replay_action[x]+replay_action_cumsum[x] for x in range(batch_size)])
+
+    q = torch.cat([output[replay_action[idx]] for idx,output in enumerate(model(replay_input))])
+
+    non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
+    non_final_images = torch.cat([Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
+    non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
+    non_final_input = [non_final_next_partition, non_final_images]
+
+    next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
+    next_q[non_final_mask] = torch.cat([output.max(0)[0] for output in model(non_final_input)])
+    next_q.volatile = False
+    target_q = replay_reward + gamma*next_q
+
+    loss = F.smooth_l1_loss(q, target_q)
+    optimizer.zero_grad()
+    loss.backward()
+    for param in model.parameters():
+        param.grad.data.clamp(-1, 1)
+    optimizer.step()
+
+
 gamma = 1
 eps_start = 0.95
 eps_end = 0.05
 # eps_start = 1
 # eps_end = 1
 eps_decay = 1000
-batch_size = 100
+batch_size = 20
 
-n_episodes = 5000
+n_episodes = 10000
 data_dir = 'dataset'
-sampling_size = 30
-t_stop = 9
+sampling_size = 10
+t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
-train_max = 5000
-test_max = 1
+train_max = 5
+test_max = 5
+epoch_episode = 20
 
 model = DQRN(sampling_size,784,32,32)
-# model = CONV_DQRN(128, 32, 32)
+# model = CONV_DQRN(sampling_size, 128, 32, 32)
 model.cuda()
 
 optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
@@ -141,13 +174,14 @@ all_test_purity = []
 test_purity = [0]*test_max
 
 for i_episode in range(n_episodes):
-    phase = 'train' if (i_episode % 10 < 9) else 'test'
+    # phase = 'train' if (i_episode%100 < 90) else 'test'
+    phase = 'train' if (i_episode%epoch_episode < epoch_episode-test_max) else 'test'
 
     if phase == 'train':
-        clustering_env.set_seed(0)
+        clustering_env.set_seed(train_count%train_max)
         train_count += 1
-    else:
-        clustering_env.set_seed(0)
+    if phase == 'test':
+        clustering_env.set_seed(test_count%test_max)
         test_count += 1
 
     partition, images, _ = clustering_env.reset()
@@ -179,17 +213,19 @@ for i_episode in range(n_episodes):
         if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
-            optimize()
+            optimize_batch()
 
         steps_done += 1
 
         if t == t_stop:
             if phase == 'test':
+                # print('episode', i_episode, 'purity:', purity)
                 test_purity[test_count%test_max] = purity
-                if test_count%test_max == test_max-1:
+                if test_count%test_max == 0:
                     avg_purity = sum(test_purity)/test_max
                     all_test_purity.append(avg_purity)
                     print('episode', i_episode, 'average test purity:', avg_purity)
+                    print('all purity', test_purity)
             break
 
         partition = next_partition
