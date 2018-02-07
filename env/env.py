@@ -33,7 +33,8 @@ class State(object):
 
 
 class Env(object):
-    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', train=True, reward='local_purity'):
+    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', train=True, overlap=True,
+                 reward='local_purity'):
         if dataset == 'mnist':
             images, labels = mnist_read(train, data_dir)
             label_dict = defaultdict(list)
@@ -49,6 +50,7 @@ class Env(object):
             raise ValueError("Sampling size should be a multiple of class number")
         self.sampling_size = sampling_size
         self.class_num = class_num
+        self.overlap = overlap
         self.train = train
         self.sampled_features = []
         self.sampled_labels = []
@@ -56,17 +58,21 @@ class Env(object):
         assert reward in ['local_purity', 'global_purity', 'uniform']
         self.reward = reward
 
-    def set_seed(self, seed):
-        random.seed(seed)
-
-    def reset(self):
+    def reset(self, seed=None):
         """
         Define state as the combination of cluster assignments and sampled_features
         :return:
         """
+        random.seed(seed)
         sampled_features = []
         sampled_labels = []
-        sampled_classes = random.sample(self.label_dict.keys(), self.class_num)
+        if self.overlap:
+            sampled_classes = random.sample(self.label_dict.keys(), self.class_num)
+        else:
+            if self.train:
+                sampled_classes = sorted(self.label_dict.keys())[:self.class_num]
+            else:
+                sampled_classes = sorted(self.label_dict.keys())[self.class_num:]
         for key in sampled_classes:
             sampled_features += random.sample(self.label_dict[key], int(self.sampling_size/self.class_num))
             sampled_labels += [key] * int(self.sampling_size/self.class_num)
@@ -77,12 +83,13 @@ class Env(object):
         sampled_features[:], sampled_labels[:] = zip(*combined)
         self.sampled_features = sampled_features
         self.sampled_labels = sampled_labels
+        # print({i: label for i, label in enumerate(sampled_labels)})
 
         # create a new tree using sampled data
         self.tree = Tree(self.class_num, sampled_labels, self.reward)
         assignments = self.tree.get_assignment()
-        purity = self.tree.current_purity()
-        return State(assignments), self.sampled_features, purity
+        # purity = self.tree.current_purity()
+        return State(assignments), self.sampled_features
 
     def step(self, action):
         """
