@@ -64,23 +64,7 @@ class DQRN(nn.Module):
         state_rep = F.relu(self.state_fc(state_rep))
         cluster_rep = F.relu(self.cluster_fc(cluster_rep))
 
-<<<<<<< HEAD
-        n_action = n_cluster*(n_cluster-1)/2
-=======
-        # q_table = Variable(torch.zeros(n_cluster*(n_cluster-1)/2).type(FloatTensor))
-        # count = 0
-        # for i in range(n_cluster):
-        #     for j in range(i):
-        #         merge_cluster = cluster_rep[i,:] + cluster_rep[j,:]
-        #         merge_rep = torch.cat([state_rep, merge_cluster])
-        #         q = F.relu(self.agent_fc1(merge_rep))
-        #         q = self.agent_fc2(q)
-        #         q_table[count] = q
-        #         count += 1
-        # q_table = nn.Softmax()(q_table)
-
         n_action = int(n_cluster*(n_cluster-1)/2)
->>>>>>> a45d94c37edd6ff840843eb66f7a7798d0c66c15
         row_idx = self.row_idx[:n_action]
         col_idx = self.col_idx[:n_action]
         merge_cluster = cluster_rep[row_idx,:]+cluster_rep[col_idx,:]

@@ -158,7 +158,7 @@ t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 train_max = 5
 test_max = 5
-epoch_episode = 20
+epoch_episode = 50
 
 model = DQRN(sampling_size,784,32,32)
 # model = CONV_DQRN(sampling_size, 128, 32, 32)
@@ -179,17 +179,14 @@ for i_episode in range(n_episodes):
     phase = 'train' if (i_episode%epoch_episode < epoch_episode-test_max) else 'test'
 
     if phase == 'train':
-<<<<<<< HEAD
         clustering_env.set_seed(train_count%train_max)
         train_count += 1
     if phase == 'test':
         clustering_env.set_seed(test_count%test_max)
-=======
         partition, images = clustering_env.reset(0)
         train_count += 1
     else:
         partition, images = clustering_env.reset(1)
->>>>>>> a45d94c37edd6ff840843eb66f7a7798d0c66c15
         test_count += 1
 
     random.seed()
@@ -231,12 +228,9 @@ for i_episode in range(n_episodes):
                 if test_count%test_max == 0:
                     avg_purity = sum(test_purity)/test_max
                     all_test_purity.append(avg_purity)
-<<<<<<< HEAD
                     print('episode', i_episode, 'average test purity:', avg_purity)
                     print('all purity', test_purity)
-=======
                     print('Episode {} average test purity: {:.2f}'.format(i_episode, avg_purity))
->>>>>>> a45d94c37edd6ff840843eb66f7a7798d0c66c15
             break
 
         partition = next_partition
