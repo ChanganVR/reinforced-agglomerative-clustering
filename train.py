@@ -179,14 +179,10 @@ for i_episode in range(n_episodes):
     phase = 'train' if (i_episode%epoch_episode < epoch_episode-test_max) else 'test'
 
     if phase == 'train':
-        clustering_env.set_seed(train_count%train_max)
+        partition, images = clustering_env.reset(seed=train_count%train_max)
         train_count += 1
     if phase == 'test':
-        clustering_env.set_seed(test_count%test_max)
-        partition, images = clustering_env.reset(0)
-        train_count += 1
-    else:
-        partition, images = clustering_env.reset(1)
+        partition, images = clustering_env.reset(seed=test_count%test_max)
         test_count += 1
 
     random.seed()
