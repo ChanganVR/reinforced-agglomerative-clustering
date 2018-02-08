@@ -75,7 +75,7 @@ class DQRN(nn.Module):
         q_table = nn.Softmax(dim=0)(q_table)
 
         return q_table
-
+    # @profile
     def forward(self, input):
         partition_batch, images_batch = input
         batch_size = len(partition_batch)
@@ -115,8 +115,15 @@ class DQRN(nn.Module):
             action_cumsum = torch.cumsum(n_action, dim=0)
             action_cumsum = torch.cat([LongTensor([0]), action_cumsum[:-1]])
 
-        row_idx = LongTensor([x + cluster_cumsum[y] for y in range(batch_size) for x in self.row_idx[:n_action[y]]])
-        col_idx = LongTensor([x + cluster_cumsum[y] for y in range(batch_size) for x in self.col_idx[:n_action[y]]])
+        # row_idx = LongTensor([x + cluster_cumsum[y] for y in range(batch_size) for x in self.row_idx[:n_action[y]]])
+        # col_idx = LongTensor([x + cluster_cumsum[y] for y in range(batch_size) for x in self.col_idx[:n_action[y]]])
+
+        row_idx = torch.cat([self.row_idx[:n_action[y]]+cluster_cumsum[y] for y in range(batch_size)])
+        col_idx = torch.cat([self.col_idx[:n_action[y]]+cluster_cumsum[y] for y in range(batch_size)])
+
+        # assert(torch.equal(row_idx, row_idx2))
+        # assert(torch.equal(col_idx, col_idx2))
+
         merge_cluster = cluster_rep[row_idx,:]+cluster_rep[col_idx,:]
 
         tile_state = torch.cat([state_rep[x,:].repeat(n_action[x],1) for x in range(batch_size)])

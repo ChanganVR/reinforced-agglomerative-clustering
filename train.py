@@ -108,6 +108,7 @@ def optimize():
 
     print('non batch time: ', time.time()-start)
 
+# @profile
 def optimize_batch():
     if len(memory) < 20*batch_size:
         return
@@ -146,7 +147,7 @@ def optimize_batch():
         param.grad.data.clamp(-1, 1)
     optimizer.step()
 
-    print('batch time: ', time.time()-start)
+    # print('batch time: ', time.time()-start)
 
 
 gamma = 1
@@ -155,7 +156,7 @@ eps_end = 0.05
 # eps_start = 1
 # eps_end = 1
 eps_decay = 1000
-batch_size = 200
+batch_size = 50
 
 n_episodes = 100000
 data_dir = 'dataset'
@@ -219,7 +220,7 @@ for i_episode in range(n_episodes):
         if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
-            optimize()
+            # optimize()
             optimize_batch()
 
 
