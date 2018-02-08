@@ -76,6 +76,7 @@ def optimize():
     if len(memory) < 20*batch_size:
         return
 
+    start = time.time()
     all_replay = memory.sample(batch_size)
     for i_replay in range(batch_size):
         replay = all_replay[i_replay]
@@ -87,14 +88,14 @@ def optimize():
         replay_reward = Variable(replay[3])
         replay_images = replay[4]
 
-        replay_input = [replay_partition, replay_images]
-        q = model(replay_input)[replay_action]
+        replay_input = [[replay_partition], Variable(replay_images)]
+        q = model(replay_input)[0][replay_action]
 
         if replay_next_partition is None:
             target_q = replay_reward
         else:
-            replay_next_input = [replay_next_partition, replay_images]
-            result = model(replay_next_input).max(0)[0]
+            replay_next_input = [[replay_next_partition], Variable(replay_images)]
+            result = model(replay_next_input)[0].max(0)[0]
             next_q = Variable(result.data, requires_grad=False)
             target_q = replay_reward + gamma * next_q
 
@@ -105,10 +106,13 @@ def optimize():
             param.grad.data.clamp(-1, 1)
         optimizer.step()
 
+    print('non batch time: ', time.time()-start)
+
 def optimize_batch():
     if len(memory) < 20*batch_size:
         return
 
+    start = time.time()
     replay_batch = memory.sample(batch_size)
     replay_partition = [replay[0] for replay in replay_batch]
     replay_next_partition = [replay[2] for replay in replay_batch]
@@ -142,6 +146,8 @@ def optimize_batch():
         param.grad.data.clamp(-1, 1)
     optimizer.step()
 
+    print('batch time: ', time.time()-start)
+
 
 gamma = 1
 eps_start = 0.95
@@ -149,15 +155,15 @@ eps_end = 0.05
 # eps_start = 1
 # eps_end = 1
 eps_decay = 1000
-batch_size = 20
+batch_size = 200
 
-n_episodes = 10000
+n_episodes = 100000
 data_dir = 'dataset'
-sampling_size = 10
-t_stop = 4
+sampling_size = 40
+t_stop = 20
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
-train_max = 5
-test_max = 5
+train_max = 1
+test_max = 1
 epoch_episode = 50
 
 model = DQRN(sampling_size,784,32,32)
@@ -213,7 +219,9 @@ for i_episode in range(n_episodes):
         if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
+            optimize()
             optimize_batch()
+
 
         steps_done += 1
 
@@ -224,12 +232,12 @@ for i_episode in range(n_episodes):
                 if test_count%test_max == 0:
                     avg_purity = sum(test_purity)/test_max
                     all_test_purity.append(avg_purity)
-                    print('episode', i_episode, 'average test purity:', avg_purity)
-                    print('all purity', test_purity)
+                    # print('episode', i_episode, 'average test purity:', avg_purity)
+                    # print('all purity', test_purity)
                     print('Episode {} average test purity: {:.2f}'.format(i_episode, avg_purity))
             break
 
         partition = next_partition
 
-    if len(memory) > 20*batch_size:
-        print('Episode {} takes {:.2f}s'.format(i_episode, time.time()-start))
+    # if len(memory) > 20*batch_size:
+    #     print('Episode {} takes {:.2f}s'.format(i_episode, time.time()-start))
