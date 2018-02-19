@@ -123,10 +123,6 @@ def optimize_batch():
 
     replay_input = [replay_partition, replay_images]
     replay_action = Variable(torch.cat([replay[1] for replay in replay_batch]))
-    # replay_action_count = LongTensor([len(partition) for partition in replay_partition])
-    # replay_action_cumsum = torch.cumsum(replay_action_count)
-    # replay_action_cumsum = torch.cat([LongTensor([0]), replay_action_cumsum[:-1]])
-    # replay_action = Variable([replay_action[x]+replay_action_cumsum[x] for x in range(batch_size)])
 
     q = torch.cat([output[replay_action[idx]] for idx,output in enumerate(model(replay_input))])
 
@@ -157,8 +153,51 @@ def optimize_batch():
         for param, param_ref in zip(model.parameters(), model_ref.parameters()):
             param_ref.data = param_ref.data*(1-update_factor) + param.data*update_factor
 
-    # print('batch time: ', time.time()-start)
+def run_episode(seed, phase):
+    partition, images = clustering_env.reset(seed=train_count % train_max)
+    partition = partition.cluster_assignments
+    images = np.concatenate(images).reshape((sampling_size, -1))
+    images = torch.from_numpy(images).type(FloatTensor)
 
+    episode_reward = 0
+    reward_list = []
+
+    random.seed()
+    for t in count():
+        action = select_action(phase)
+
+        action_pair = pair_from_index(action[0])
+        reward, next_partition, purity = clustering_env.step(action_pair)
+        next_partition = next_partition.cluster_assignments
+
+        episode_reward += reward
+        reward_list.append(reward)
+        reward = FloatTensor([reward])
+
+        if t == t_stop:
+            final_partition = next_partition
+            next_partition = None
+
+        if phase == 'train':
+            exp = [partition, action, next_partition, reward, images]
+            memory.push(exp)
+            optimize_batch()
+
+        if t == t_stop:
+            break
+
+        partition = next_partition
+
+    return episode_reward
+
+
+def test(start_seed=0):
+    for i_test in range(test_max):
+        test_seed = i_test + start_seed
+        test_purity[i_test] = run_episode(seed=test_seed, phase='test')
+
+    avg_test = sum(test_purity) / test_max
+    return avg_test
 
 gamma = 1
 eps_start = 0.95
@@ -173,9 +212,7 @@ clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 
 train_max = 10000
 test_max = 1
-inductive = False
 epoch_episode_train = 500
-epoch_episode = epoch_episode_train+test_max
 n_episodes = 1000000
 
 DOUBLE_Q = False
@@ -200,91 +237,22 @@ train_count = 0
 test_count = 0
 
 all_test_purity = []
-test_purity = [0]*test_max
+transductive_purity = [0]*test_max
+inductive_purity = [0]*test_max
 train_purity = [0]*train_max
 
-start = time.time()
-epoch_start = start
-optimize_time = 0
+episode_trained = 0
+episode_tested = 0
 for i_episode in range(n_episodes):
-    # phase = 'train' if (i_episode%100 < 90) else 'test'
-    phase = 'train' if (i_episode%epoch_episode < epoch_episode-test_max) else 'test'
 
-    if phase == 'train':
-        partition, images = clustering_env.reset(seed=train_count%train_max)
-        train_count += 1
-    if phase == 'test':
-        partition, images = clustering_env.reset(seed=test_count%test_max+train_max*inductive)
-        test_count += 1
+    seed = i_episode%train_max
+    train_purity[i_episode%train_max] = run_episode(seed, phase='train')
 
-    random.seed()
-    partition = partition.cluster_assignments
-    images = np.concatenate(images).reshape((sampling_size, -1))
-    images = torch.from_numpy(images).type(FloatTensor)
-
-    episode_reward = 0
-    reward_list = []
-
-    for t in count():
-
-        action = select_action(phase)
-
-        action_pair = pair_from_index(action[0])
-        reward, next_partition, purity = clustering_env.step(action_pair)
-        next_partition = next_partition.cluster_assignments
-
-        episode_reward += reward
-        reward_list.append(reward)
-        reward = FloatTensor([reward])
-
-        if t == t_stop:
-            final_partition = next_partition
-            next_partition = None
-
-        if phase == 'train':
-            exp = [partition, action, next_partition, reward, images]
-            memory.push(exp)
-            # optimize_start = time.time()
-            optimize_batch()
-            # optimize_time += time.time() - optimize_start
-
-        steps_done += 1
-
-        if t == t_stop:
-            if phase == 'train':
-                # if train_count%10 == 0:
-                #     optimize_start = time.time()
-                #     optimize_batch()
-                #     optimize_time += time.time()-optimize_start
-
-                train_purity[train_count%train_max] = purity
-                if train_count%(epoch_episode_train) == 0:
-                    train_time = time.time()-start
-                    start = time.time()
-
-            if phase == 'test':
-                # print('episode', i_episode, 'purity:', purity)
-                test_purity[test_count%test_max] = purity
-                if test_count%test_max == 0:
-                    avg_test = sum(test_purity)/test_max
-                    avg_train = sum(train_purity)/train_max
-                    all_test_purity.append(avg_test)
-                    # print('episode', i_episode, 'average test purity:', avg_purity)
-                    # print('all purity', test_purity)
-                    test_time = time.time()-start
-                    epoch_time = time.time()-epoch_start
-                    start = time.time()
-                    epoch_start = start
-                    print('Episode {} average test purity: {:.4f}, average train purity: {:.4f}'.format(i_episode, avg_test, avg_train))
-                    # print('epoch_time: %.03f, train time: %.03f, optimize time: %.03f, test time: %.03f\n'%(epoch_time, train_time, optimize_time, test_time))
-                    optimize_time = 0
-            break
-
-        partition = next_partition
+    if i_episode%epoch_episode_train == 0:
+        p_trans = test(trans_flag=True)
+        p_in = test(trans_flag=False)
+        print('Episode {} transductive purity: {:.4f}, inductive purity: {:.4f}'.format(i_episode, p_trans, p_in))
 
     if i_episode%10000 == 1000:
-        print('Episode {} average train purity: {:.4f}'.format(i_episode, avg_train))
         torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_10000.pt')
 
-    # if len(memory) > 20*batch_size:
-    #     print('Episode {} takes {:.2f}s'.format(i_episode, time.time()-start))

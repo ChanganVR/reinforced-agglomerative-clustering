@@ -7,9 +7,14 @@ import itertools
 import numpy as np
 import collections
 
-FloatTensor = torch.cuda.FloatTensor
-LongTensor = torch.cuda.LongTensor
-ByteTensor = torch.cuda.ByteTensor
+if 1:
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+    ByteTensor = torch.cuda.ByteTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+    ByteTensor = torch.ByteTensor
 
 def get_partition_length(partition):
     return len(list(itertools.chain.from_iterable(partition)))
@@ -53,6 +58,7 @@ def prepare_sequence(partition, features, volatile=False):
     return packed_seq
 
 
+# @profile
 def pad_sequence(sequences, batch_first=False):
     r"""Pad a list of variable length Variables with zero
 
@@ -117,7 +123,7 @@ def pad_sequence(sequences, batch_first=False):
     return out_variable
 
 
-
+# @profile
 def pack_sequence(sequences):
     r"""Packs a list of variable length Variables
 
