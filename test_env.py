@@ -3,10 +3,11 @@ from env import env
 
 
 data_dir = 'dataset'
-sampling_size = 10
+sampling_size = 20
 clustering_env = env.Env(data_dir, sampling_size, reward='local_purity')
-state, _ = clustering_env.reset(seed=0)
-# labels                            [ 9,   3,   8,   9,   4,   5,   4,   5,   3,   8 ]
+state, _ = clustering_env.reset(seed=0, steps=15)
+print(state.cluster_assignments)
+# labels                            [ 8, 3, 6, 7, 8, 1, 3, 1, 7, 6 ]
 assert state.cluster_assignments == [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]]
 
 action = env.Action(0, 3)

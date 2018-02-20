@@ -1,6 +1,7 @@
 from __future__ import division
 from __future__ import print_function
 from collections import Counter
+import random
 
 
 class Node(object):
@@ -19,7 +20,8 @@ class Tree(object):
     def __init__(self, class_num, labels, reward):
         self.labels = labels
         self.leaf_num = len(self.labels)
-        # print(labels)
+        print('\t'.join([str(x) for x in labels]))
+        print('\t'.join([str(x) for x in range(len(labels))]))
         leaf_nodes = [Node(i, None) for i in range(len(labels))]
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num
@@ -55,12 +57,33 @@ class Tree(object):
         self.counter += 1
         reward = self.compute_reward(cluster_a, cluster_b, new_cluster)
 
-        # remove a,b from root and and new cluster
+        # remove a,b from root and create new cluster
         self.root.data.remove(cluster_a)
         self.root.data.remove(cluster_b)
         self.root.data.append(new_cluster)
 
         return reward
+
+    def step(self):
+        assignments = self.get_assignment()
+        candidate_pairs = [(i, j) for i in range(len(assignments)) for j in range(i)]
+        random.shuffle(candidate_pairs)
+        for (a, b) in candidate_pairs:
+            cluster_a = self.root.data[self.last_assignment_dict[a]]
+            cluster_b = self.root.data[self.last_assignment_dict[b]]
+            labels = []
+            if cluster_a.data is None:
+                labels.append(self.labels[cluster_a.number])
+            else:
+                labels += [self.labels[leaf_num] for leaf_num in cluster_a.data]
+            if cluster_b.data is None:
+                labels.append(self.labels[cluster_b.number])
+            else:
+                labels += [self.labels[leaf_num] for leaf_num in cluster_b.data]
+            # successfully find two clusters containing one label
+            if len(set(labels)) == 1:
+                self.merge(a, b)
+                break
 
     def compute_reward(self, cluster_a, cluster_b, new_cluster):
         """
@@ -101,7 +124,7 @@ class Tree(object):
             # find most common label in the cluster
             counter = Counter()
             for point in cluster.data:
-                counter[self.labels[point-1]] += 1
+                counter[self.labels[point]] += 1
             _, count = counter.most_common(1)[0]
             return count
 

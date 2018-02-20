@@ -58,11 +58,14 @@ class Env(object):
         assert reward in ['local_purity', 'global_purity', 'uniform']
         self.reward = reward
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, steps=0):
         """
         Define state as the combination of cluster assignments and sampled_features
         :return:
         """
+        # check if steps is valid
+        if steps < 0 or steps > self.sampling_size - self.class_num:
+            raise ValueError('Steps argument is invalid')
         random.seed(seed)
         sampled_features = []
         sampled_labels = []
@@ -87,6 +90,9 @@ class Env(object):
 
         # create a new tree using sampled data
         self.tree = Tree(self.class_num, sampled_labels, self.reward)
+        # do steps number correct merge
+        for i in range(steps):
+            self.tree.step()
         assignments = self.tree.get_assignment()
         # purity = self.tree.current_purity()
         return State(assignments), self.sampled_features
