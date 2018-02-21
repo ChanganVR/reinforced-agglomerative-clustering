@@ -279,3 +279,72 @@ class CONV_DQRN(nn.Module):
         q_table = [nn.Softmax(dim=0)(q_table[action_cumsum[x]:action_cumsum[x] + n_action[x]]) for x in range(batch_size)]
 
         return q_table
+
+class SET_DQN(nn.Module):
+    def __init__(self):
+        super(SET_DQN, self).__init__()
+        self.fc_gate1 = nn.Linear(784*2,1024)
+        self.fc_gate2 = nn.Linear(1024,1)
+        # self.fc_mode1 = nn.Linear()
+        # self.fc_mode2 = nn.Linear()
+        self.fc_cluster1 = nn.Linear(784,1024)
+        self.fc_cluster2 = nn.Linear(1024,1024)
+
+        self.fc_action1 = nn.Linear(2048,1024)
+        self.fc_action2 = nn.Linear(1024,1)
+
+    @profile
+    def forward(self, input):
+        # partitions in forms of [[e1, e2],[e3],...] of length n_partition
+        # partition_owner in forms of [o1, o1, ..., o2, ...] of length n_image
+        # siblings in forms of [[c11, c12, ...], [c21, c22, ...],...] of length batch_size
+        # sibling_owner in forms of [o1, o1, ..., o2, ...] of size batch_size
+
+        images, partitions, partition_owner, select_i, select_j, action_siblings = input
+        # images = Variable(images)
+        batch_size = len(action_siblings)
+        n_partition = len(partitions)
+
+        tmp = []
+        for x in range(n_partition):
+            tmp1 = partitions[x]
+            tmp1 = LongTensor(tmp1)
+            tmp2 = torch.mean(images[tmp1],dim=0).view(1,-1)
+            tmp.append(tmp2)
+        all_means = torch.cat(tmp)
+
+        all_means = torch.cat([torch.mean(images[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)])
+        tile_means = torch.cat([all_means[x,...].view(1,-1) for x in partition_owner])
+        gate_input = torch.cat([images, tile_means], dim=1)
+
+        gate_output = F.relu(self.fc_gate1(gate_input))
+        gate_output = self.fc_gate2(gate_output)
+        gate_output = torch.cat([nn.Softmax(dim=0)(gate_output[partitions[x],...]) for x in range(n_partition)], dim=0)
+
+        cluster_input = torch.mul(images, gate_output)
+        cluster_input = torch.cat([torch.sum(cluster_input[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)], dim=0)
+        cluster_output = F.relu(self.fc_cluster1(cluster_input))
+        cluster_output = self.fc_cluster2(cluster_output)
+
+        cluster_pairs = torch.cat([cluster_output[select_i,...], cluster_output[select_j,...]], dim=1)
+        q_table = F.relu(self.fc_action1(cluster_pairs))
+        q_table = self.fc_action2(q_table)
+        q_table = [nn.Softmax(dim=0)(q_table[action_siblings[x]]) for x in range(batch_size)]
+
+        return q_table
+
+if __name__ == '__main__':
+    images = torch.rand(10,3)
+    partitions = [[0],[1,2],[3,4],[5,6,7,8],[9]]
+    partition_owner = [0,1,1,2,2,3,3,3,3,4]
+    select_i = [1,2,2,4]
+    select_j = [0,0,1,3]
+    action_siblings = [[0,0,0],[1]]
+
+    input = [images, partitions, partition_owner, select_i, select_j, action_siblings]
+    model = SET_DQN()
+    model(input)
+
+
+
+

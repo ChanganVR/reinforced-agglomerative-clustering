@@ -174,7 +174,7 @@ clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 train_max = 10000
 test_max = 1
 inductive = False
-epoch_episode_train = 500
+epoch_episode_train = 100
 epoch_episode = epoch_episode_train+test_max
 n_episodes = 1000000
 
@@ -244,9 +244,9 @@ for i_episode in range(n_episodes):
         if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
-            # optimize_start = time.time()
+            optimize_start = time.time()
             optimize_batch()
-            # optimize_time += time.time() - optimize_start
+            optimize_time += time.time() - optimize_start
 
         steps_done += 1
 
@@ -276,15 +276,15 @@ for i_episode in range(n_episodes):
                     start = time.time()
                     epoch_start = start
                     print('Episode {} average test purity: {:.4f}, average train purity: {:.4f}'.format(i_episode, avg_test, avg_train))
-                    # print('epoch_time: %.03f, train time: %.03f, optimize time: %.03f, test time: %.03f\n'%(epoch_time, train_time, optimize_time, test_time))
+                    print('epoch_time: %.03f, train time: %.03f, optimize time: %.03f, test time: %.03f\n'%(epoch_time, train_time, optimize_time, test_time))
                     optimize_time = 0
             break
 
         partition = next_partition
 
-    if i_episode%10000 == 1000:
-        print('Episode {} average train purity: {:.4f}'.format(i_episode, avg_train))
-        torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_10000.pt')
+    # if i_episode%10000 == 1000:
+    #     print('Episode {} average train purity: {:.4f}'.format(i_episode, avg_train))
+    #     torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_10000.pt')
 
     # if len(memory) > 20*batch_size:
     #     print('Episode {} takes {:.2f}s'.format(i_episode, time.time()-start))

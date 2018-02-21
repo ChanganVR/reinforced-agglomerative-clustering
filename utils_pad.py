@@ -16,6 +16,52 @@ else:
     LongTensor = torch.LongTensor
     ByteTensor = torch.ByteTensor
 
+def get_select(n_cluster, start):
+    n_action = n_cluster*(n_cluster-1)/2
+    select_i = [start]*n_action
+    select_j = [start]*n_action
+    count = 0
+    for i in range(n_cluster):
+        for j in range(i):
+            select_i[count] += i
+            select_j[count] += j
+            count += 1
+
+    return select_i, select_j
+
+def prep_partition(partitions):
+    cluster_batch_id = [idx for idx,p in enumerate(partitions) for x in p]
+    chained_partitions = list(itertools.chain.from_iterable(partitions))
+
+    image_batch_id = [cluster_batch_id[idx] for idx,p in enumerate(chained_partitions) for x in p]
+    batch_cumsum = [0] + np.cumsum([get_partition_length(p) for p in partitions]).tolist()
+    cumed_partitions = [[x+batch_cumsum[cluster_batch_id[id]] for x in cluster] for id,cluster in enumerate(chained_partitions)]
+
+    # partition_owner indicates the owner cluster for each element
+    n_images = sum([len(p) for p in chained_partitions])
+    partition_owner = [-1]*n_images
+    for idx,p in enumerate(cumed_partitions):
+        for e in p:
+            partition_owner[e] = idx
+
+    select_i = []
+    select_j = []
+    action_siblings = []
+    cluster_count = [len(p) for p in partitions]
+    start = 0
+    action_cum = 0
+    for i in range(len(partitions)):
+        this_i, this_j = get_select(cluster_count[i], start)
+        select_i.extend(this_i)
+        select_j.extend(this_j)
+        n_action = cluster_count[i]*(cluster_count[i]-1)/2
+        start += cluster_count[i]
+        action_siblings.append(range(action_cum, action_cum+n_action))
+        action_cum += n_action
+
+    return [cumed_partitions, partition_owner, select_i, select_j, action_siblings]
+
+
 def get_partition_length(partition):
     return len(list(itertools.chain.from_iterable(partition)))
 
@@ -157,5 +203,5 @@ def pack_sequence(sequences):
     return pack_padded_sequence(pad_sequence(sequences), [v.size(0) for v in sequences])
 
 if __name__ == '__main__':
-    partition_batch = [[[0,1,3],[2]],[[0,3],[1,2]],[[0,1,2,3,4,5],[0,1]]]
-    print(merge_partition(partition_batch))
+    partition_batch = [[[0,1,3],[2]],[[0,3],[1,2],[4],[5,6,7,8]],[[0,1,2,3,4,5],[6,7]]]
+    print(prep_partition(partition_batch))

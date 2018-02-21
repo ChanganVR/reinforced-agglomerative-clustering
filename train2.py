@@ -10,10 +10,13 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
 from utils_pad import prepare_sequence
+from utils_pad import prep_partition
 from Agent import DQRN
 from Agent import CONV_DQRN
+from Agent import SET_DQN
 from env import env
 from itertools import count
+from feature_net import mnist_cnn
 
 
 if 1:
@@ -55,9 +58,10 @@ class ReplayMemory():
         return len(self.memory)
 
 # @profile
-def select_action(phase='train'):
+def select_action(partition, images, phase):
     # input = prepare_sequence(partition, images, volatile=True)
-    input = [[partition], Variable(images)]
+    # input = [[partition], Variable(images)]
+    input = [Variable(images)]+prep_partition([partition])
     n_cluster = len(partition)
     n_action = n_cluster * (n_cluster - 1) / 2
 
@@ -108,7 +112,7 @@ def optimize():
 
     print('non batch time: ', time.time()-start)
 
-# @profile
+@profile
 def optimize_batch():
     if len(memory) < 10*batch_size:
         return
@@ -121,15 +125,18 @@ def optimize_batch():
     replay_reward = Variable(torch.cat([replay[3] for replay in replay_batch]))
     replay_images = torch.cat([Variable(replay[4]) for replay in replay_batch])
 
-    replay_input = [replay_partition, replay_images]
+    # replay_input = [replay_partition, replay_images]
+    replay_input = [replay_images] + prep_partition(replay_partition)
     replay_action = Variable(torch.cat([replay[1] for replay in replay_batch]))
 
-    q = torch.cat([output[replay_action[idx]] for idx,output in enumerate(model(replay_input))])
+    q_out = model(replay_input)
+    q = torch.cat([output[replay_action[idx]] for idx,output in enumerate(q_out)])
 
     non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
     non_final_images = torch.cat([Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
     non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
-    non_final_input = [non_final_next_partition, non_final_images]
+    # non_final_input = [non_final_next_partition, non_final_images]
+    non_final_input = [non_final_images] + prep_partition(non_final_next_partition)
 
     next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
 
@@ -153,18 +160,21 @@ def optimize_batch():
         for param, param_ref in zip(model.parameters(), model_ref.parameters()):
             param_ref.data = param_ref.data*(1-update_factor) + param.data*update_factor
 
+# @profile
 def run_episode(seed, phase):
-    partition, images = clustering_env.reset(seed=train_count % train_max)
+    partition, images = clustering_env.reset(seed=seed)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
+
+    # images = m_net(Variable(images, volatile=True))[0].data
 
     episode_reward = 0
     reward_list = []
 
     random.seed()
     for t in count():
-        action = select_action(phase)
+        action = select_action(partition, images, phase)
 
         action_pair = pair_from_index(action[0])
         reward, next_partition, purity = clustering_env.step(action_pair)
@@ -188,31 +198,37 @@ def run_episode(seed, phase):
 
         partition = next_partition
 
-    return episode_reward
+    return purity
 
 
 def test(start_seed=0):
-    for i_test in range(test_max):
-        test_seed = i_test + start_seed
+    test_purity = [0]*test_max
+    test_seeds = random.sample(range(train_max), test_max)
+    for i_test,seed in enumerate(test_seeds):
+        test_seed = seed + start_seed
         test_purity[i_test] = run_episode(seed=test_seed, phase='test')
 
     avg_test = sum(test_purity) / test_max
     return avg_test
 
+m_net = mnist_cnn()
+m_net.cuda()
+m_net.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_model.pt'))
+
 gamma = 1
 eps_start = 0.95
 eps_end = 0.05
 eps_decay = 50000
-batch_size = 80
+batch_size = 40
 
 data_dir = 'dataset'
 sampling_size = 10
 t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 
-train_max = 10000
+train_max = 1
 test_max = 1
-epoch_episode_train = 500
+epoch_episode_train = 100
 n_episodes = 1000000
 
 DOUBLE_Q = False
@@ -221,13 +237,14 @@ update_factor = 0.1
 
 hidden_low = 256
 hidden_high = 256
-model = DQRN(sampling_size,784,hidden_low,hidden_high)
-model_ref = DQRN(sampling_size,784,hidden_low,hidden_high)
+# model = DQRN(sampling_size,784,hidden_low,hidden_high)
+# model_ref = DQRN(sampling_size,784,hidden_low,hidden_high)
 # model = CONV_DQRN(sampling_size, 1024, 32, 32)
+model = SET_DQN()
 
-model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/model_500_snapshot.pt'))
+# model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/model_1000_snapshot.pt'))
 model.cuda()
-model_ref.cuda()
+# model_ref.cuda()
 
 optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
 memory = ReplayMemory(50000)
@@ -249,10 +266,10 @@ for i_episode in range(n_episodes):
     train_purity[i_episode%train_max] = run_episode(seed, phase='train')
 
     if i_episode%epoch_episode_train == 0:
-        p_trans = test(trans_flag=True)
-        p_in = test(trans_flag=False)
+        p_trans = test()
+        p_in = test(start_seed=train_max)
         print('Episode {} transductive purity: {:.4f}, inductive purity: {:.4f}'.format(i_episode, p_trans, p_in))
 
     if i_episode%10000 == 1000:
-        torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_10000.pt')
+        torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_1000.pt')
 
