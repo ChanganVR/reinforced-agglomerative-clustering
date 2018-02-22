@@ -236,17 +236,17 @@ gamma = 1
 eps_start = 0.95
 eps_end = 0.05
 eps_decay = 50000
-batch_size = 20
+batch_size = 100
 
 data_dir = 'dataset'
 sampling_size = 10
 t_stop = 4
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 
-train_max = 1
-test_max = 1
-epoch_episode_train = 100
-n_episodes = 1000000
+train_max = 10000
+test_max = 10
+epoch_episode_train = 1000
+n_episodes = 500
 
 DOUBLE_Q = False
 update_ref = 1
@@ -263,7 +263,7 @@ model = SET_DQN()
 model.cuda()
 # model_ref.cuda()
 
-optimizer = optim.RMSprop(model.parameters(), lr=0.001)
+optimizer = optim.RMSprop(model.parameters(), lr=0.000001)
 memory = ReplayMemory(50000)
 
 steps_done = 0

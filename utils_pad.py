@@ -29,55 +29,59 @@ def get_select(n_cluster, start):
 
     return select_i, select_j
 
+# @profile
 def prep_partition(partitions):
     cluster_batch_id = [idx for idx,p in enumerate(partitions) for x in p]
     chained_partitions = list(itertools.chain.from_iterable(partitions))
+    batch_cluster_count = torch.FloatTensor([len(p) for p in partitions])
 
-    image_batch_id = [cluster_batch_id[idx] for idx,p in enumerate(chained_partitions) for x in p]
+
+
+    # image_batch_id = [cluster_batch_id[idx] for idx,p in enumerate(chained_partitions) for x in p]
     batch_cumsum = [0] + np.cumsum([get_partition_length(p) for p in partitions]).tolist()
     cumed_partitions = [[x+batch_cumsum[cluster_batch_id[id]] for x in cluster] for id,cluster in enumerate(chained_partitions)]
 
     # partition_owner indicates the owner cluster for each element
-    n_images = sum([len(p) for p in chained_partitions])
+    partition_size = [len(p) for p in chained_partitions]
+    n_images = sum(partition_size)
     partition_owner = [-1]*n_images
-    for idx,p in enumerate(cumed_partitions):
-        for e in p:
-            partition_owner[e] = idx
+    # for idx,p in enumerate(cumed_partitions):
+    #     for e in p:
+    #         partition_owner[e] = idx
 
     n_partitions = len(chained_partitions)
-    partition_size = [len(p) for p in chained_partitions]
-    p_mat = np.zeros((n_images, n_partitions))
-    r_mat = np.reciprocal(np.array(partition_size).astype(float))
+    p_mat = torch.zeros((n_images, n_partitions))
+    r_mat = torch.reciprocal(torch.FloatTensor(partition_size))
 
     for i_p in range(n_partitions):
         p_mat[cumed_partitions[i_p],i_p] = 1
 
-    p_mat = torch.from_numpy(p_mat).type(FloatTensor)
-    r_mat = torch.from_numpy(r_mat).type(FloatTensor)
+    p_mat = p_mat.type(FloatTensor)
+    r_mat = r_mat.type(FloatTensor)
 
     select_i = []
     select_j = []
     action_siblings = []
-    cluster_count = [len(p) for p in partitions]
+    # cluster_count = [len(p) for p in partitions]
     start = 0
     action_cum = 0
     for i in range(len(partitions)):
-        this_i, this_j = get_select(cluster_count[i], start)
+        this_i, this_j = get_select(batch_cluster_count[i], start)
         select_i.extend(this_i)
         select_j.extend(this_j)
-        n_action = cluster_count[i]*(cluster_count[i]-1)/2
-        start += cluster_count[i]
-        action_siblings.append(range(action_cum, action_cum+n_action))
-        action_cum += n_action
+        # n_action = cluster_count[i]*(cluster_count[i]-1)/2
+        start += batch_cluster_count[i]
+        # action_siblings.append(range(action_cum, action_cum+n_action))
+        # action_cum += n_action
 
     batch_size = len(partitions)
     batch_action_count = [x*(x-1)/2 for x in cluster_count]
     batch_action_cumsum = np.cumsum([0]+batch_action_count)
-    a_mat = np.zeros((batch_action_cumsum[-1], batch_size))
+    a_mat = torch.zeros((batch_action_cumsum[-1], batch_size))
     for i_b in range(batch_size):
         a_mat[batch_action_cumsum[i_b]:batch_action_cumsum[i_b+1],i_b] = 1
 
-    a_mat = torch.from_numpy(a_mat).type(FloatTensor)
+    a_mat = a_mat.type(FloatTensor)
 
     train_aux = [cumed_partitions, partition_owner, select_i, select_j, action_siblings, p_mat, r_mat, a_mat]
     batch_action_cumsum = torch.from_numpy(batch_action_cumsum[:-1]).type(LongTensor)
