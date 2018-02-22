@@ -61,7 +61,8 @@ class ReplayMemory():
 def select_action(partition, images, phase):
     # input = prepare_sequence(partition, images, volatile=True)
     # input = [[partition], Variable(images)]
-    input = [Variable(images)]+prep_partition([partition])
+    train_aux, _ = prep_partition([partition])
+    input = [Variable(images)]+ train_aux
     n_cluster = len(partition)
     n_action = n_cluster * (n_cluster - 1) / 2
 
@@ -69,7 +70,10 @@ def select_action(partition, images, phase):
     # eps_thresh = eps_end + (eps_start-eps_end)*math.exp(-1.*steps_done/eps_decay)
     eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
     if (phase == 'test') or sample > eps_thresh:
-        action = model(input)[0].data.max(0)[1]
+        # output, _, _ = model(input)
+        # action = output[0].data.max(0)[1]
+        output, _ = model(input)
+        action = output.data.max(0)[1]
     else:
         action = LongTensor([random.randrange(n_action)])
 
@@ -112,9 +116,9 @@ def optimize():
 
     print('non batch time: ', time.time()-start)
 
-@profile
+# @profile
 def optimize_batch():
-    if len(memory) < 10*batch_size:
+    if len(memory) < 20*batch_size:
         return
 
     start = time.time()
@@ -126,22 +130,35 @@ def optimize_batch():
     replay_images = torch.cat([Variable(replay[4]) for replay in replay_batch])
 
     # replay_input = [replay_partition, replay_images]
-    replay_input = [replay_images] + prep_partition(replay_partition)
-    replay_action = Variable(torch.cat([replay[1] for replay in replay_batch]))
+    batch_aux, batch_action_cumsum = prep_partition(replay_partition)
+    replay_input = [replay_images] + batch_aux
+    replay_action = torch.cat([replay[1] for replay in replay_batch])
+    replay_action2 = replay_action + batch_action_cumsum
 
-    q_out = model(replay_input)
-    q = torch.cat([output[replay_action[idx]] for idx,output in enumerate(q_out)])
+    # q_out, q_out2, _ = model(replay_input)
+    # q = torch.cat([output[replay_action[idx]] for idx, output in enumerate(q_out)])
+    q_out, _ = model(replay_input)
+    q = q_out[replay_action2]
 
     non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
     non_final_images = torch.cat([Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
     non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
     # non_final_input = [non_final_next_partition, non_final_images]
-    non_final_input = [non_final_images] + prep_partition(non_final_next_partition)
+    next_train_aux, next_action_cumsum = prep_partition(non_final_next_partition)
+    non_final_input = [non_final_images] + next_train_aux
 
     next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
 
     if not DOUBLE_Q:
-        next_q[non_final_mask] = torch.cat([output.max(0)[0] for output in model(non_final_input)])
+        # output, output2, output_expand = model(non_final_input)
+        # next_q[non_final_mask] = torch.cat([x.max(0)[0] for x in output])
+        # tmp1 = torch.cat([x.max(0)[0] for x in output])
+        # tmp2 = output_expand.max(1)[0]
+        # assert(torch.equal(tmp1, tmp2))
+
+        _, next_output_expand = model(non_final_input)
+        next_q[non_final_mask] = next_output_expand.max(1)[0]
+
     else:
         ref_argmax = torch.cat([output.max(0)[1] for output in model(non_final_input)])
         next_q[non_final_mask] = torch.cat([output[ref_argmax[idx]] for idx,output in enumerate(model_ref(non_final_input))])
@@ -219,7 +236,7 @@ gamma = 1
 eps_start = 0.95
 eps_end = 0.05
 eps_decay = 50000
-batch_size = 40
+batch_size = 20
 
 data_dir = 'dataset'
 sampling_size = 10
@@ -246,7 +263,7 @@ model = SET_DQN()
 model.cuda()
 # model_ref.cuda()
 
-optimizer = optim.RMSprop(model.parameters(), lr=0.0001)
+optimizer = optim.RMSprop(model.parameters(), lr=0.001)
 memory = ReplayMemory(50000)
 
 steps_done = 0
@@ -270,6 +287,6 @@ for i_episode in range(n_episodes):
         p_in = test(start_seed=train_max)
         print('Episode {} transductive purity: {:.4f}, inductive purity: {:.4f}'.format(i_episode, p_trans, p_in))
 
-    if i_episode%10000 == 1000:
-        torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_1000.pt')
+    # if i_episode%10000 == 1000:
+    #     torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_1000.pt')
 

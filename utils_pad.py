@@ -44,6 +44,17 @@ def prep_partition(partitions):
         for e in p:
             partition_owner[e] = idx
 
+    n_partitions = len(chained_partitions)
+    partition_size = [len(p) for p in chained_partitions]
+    p_mat = np.zeros((n_images, n_partitions))
+    r_mat = np.reciprocal(np.array(partition_size).astype(float))
+
+    for i_p in range(n_partitions):
+        p_mat[cumed_partitions[i_p],i_p] = 1
+
+    p_mat = torch.from_numpy(p_mat).type(FloatTensor)
+    r_mat = torch.from_numpy(r_mat).type(FloatTensor)
+
     select_i = []
     select_j = []
     action_siblings = []
@@ -59,7 +70,19 @@ def prep_partition(partitions):
         action_siblings.append(range(action_cum, action_cum+n_action))
         action_cum += n_action
 
-    return [cumed_partitions, partition_owner, select_i, select_j, action_siblings]
+    batch_size = len(partitions)
+    batch_action_count = [x*(x-1)/2 for x in cluster_count]
+    batch_action_cumsum = np.cumsum([0]+batch_action_count)
+    a_mat = np.zeros((batch_action_cumsum[-1], batch_size))
+    for i_b in range(batch_size):
+        a_mat[batch_action_cumsum[i_b]:batch_action_cumsum[i_b+1],i_b] = 1
+
+    a_mat = torch.from_numpy(a_mat).type(FloatTensor)
+
+    train_aux = [cumed_partitions, partition_owner, select_i, select_j, action_siblings, p_mat, r_mat, a_mat]
+    batch_action_cumsum = torch.from_numpy(batch_action_cumsum[:-1]).type(LongTensor)
+
+    return train_aux, batch_action_cumsum
 
 
 def get_partition_length(partition):
