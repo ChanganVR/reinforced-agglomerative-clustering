@@ -118,7 +118,7 @@ def optimize():
 
 # @profile
 def optimize_batch():
-    if len(memory) < 20*batch_size:
+    if len(memory) < start_mul*batch_size:
         return
 
     start = time.time()
@@ -177,8 +177,9 @@ def optimize_batch():
         for param, param_ref in zip(model.parameters(), model_ref.parameters()):
             param_ref.data = param_ref.data*(1-update_factor) + param.data*update_factor
 
+
 # @profile
-def run_episode(seed, phase):
+def run_episode(seed, phase, print_partition=False):
     partition, images = clustering_env.reset(seed=seed)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
@@ -197,6 +198,9 @@ def run_episode(seed, phase):
         reward, next_partition, purity = clustering_env.step(action_pair)
         next_partition = next_partition.cluster_assignments
 
+        if print_partition:
+            print('step %d partition: %s'%(t+2,next_partition))
+
         episode_reward += reward
         reward_list.append(reward)
         reward = FloatTensor([reward])
@@ -204,6 +208,7 @@ def run_episode(seed, phase):
         if t == t_stop:
             final_partition = next_partition
             next_partition = None
+            max_p = max([len(p) for p in final_partition])
 
         if phase == 'train':
             exp = [partition, action, next_partition, reward, images]
@@ -215,17 +220,23 @@ def run_episode(seed, phase):
 
         partition = next_partition
 
-    return purity
+    return purity, max_p
 
 
 def test(start_seed=0):
     test_purity = [0]*test_max
+    random.seed(0)
     test_seeds = random.sample(range(train_max), test_max)
+    p_stat = []
     for i_test,seed in enumerate(test_seeds):
         test_seed = seed + start_seed
-        test_purity[i_test] = run_episode(seed=test_seed, phase='test')
+        test_purity[i_test], max_p = run_episode(seed=test_seed, phase='test', print_partition=False)
+        p_stat.append(max_p)
 
     avg_test = sum(test_purity) / test_max
+    avg_pmax = sum(p_stat)/len(p_stat)
+    print('average max cluster size: ', avg_pmax)
+
     return avg_test
 
 m_net = mnist_cnn()
@@ -237,23 +248,26 @@ eps_start = 0.95
 eps_end = 0.05
 eps_decay = 50000
 batch_size = 100
+start_mul = 20
 
 data_dir = 'dataset'
-sampling_size = 10
+sampling_size = 50
 t_stop = 4
+first_opt = math.ceil((batch_size*start_mul)/(sampling_size-t_stop-1))
+print('first optmized in episode ', first_opt)
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
 
-train_max = 10000
-test_max = 10
-epoch_episode_train = 1000
-n_episodes = 500
+train_max = 1000
+test_max = 100
+epoch_episode_train = 200
+n_episodes = 100000
 
 DOUBLE_Q = False
 update_ref = 1
 update_factor = 0.1
 
-hidden_low = 256
-hidden_high = 256
+# hidden_low = 256
+# hidden_high = 256
 # model = DQRN(sampling_size,784,hidden_low,hidden_high)
 # model_ref = DQRN(sampling_size,784,hidden_low,hidden_high)
 # model = CONV_DQRN(sampling_size, 1024, 32, 32)
@@ -263,7 +277,7 @@ model = SET_DQN()
 model.cuda()
 # model_ref.cuda()
 
-optimizer = optim.RMSprop(model.parameters(), lr=0.000001)
+optimizer = optim.RMSprop(model.parameters(), lr=1e-6)
 memory = ReplayMemory(50000)
 
 steps_done = 0
@@ -280,9 +294,10 @@ episode_tested = 0
 for i_episode in range(n_episodes):
 
     seed = i_episode%train_max
-    train_purity[i_episode%train_max] = run_episode(seed, phase='train')
+    train_purity[i_episode%train_max], _ = run_episode(seed, phase='train')
 
-    if i_episode%epoch_episode_train == 0:
+    # if i_episode%epoch_episode_train == 0:
+    if i_episode == 0 or ((i_episode >= first_opt) and (i_episode-first_opt)%epoch_episode_train == 0):
         p_trans = test()
         p_in = test(start_seed=train_max)
         print('Episode {} transductive purity: {:.4f}, inductive purity: {:.4f}'.format(i_episode, p_trans, p_in))

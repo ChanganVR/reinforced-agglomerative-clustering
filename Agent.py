@@ -283,18 +283,25 @@ class CONV_DQRN(nn.Module):
 class SET_DQN(nn.Module):
     def __init__(self):
         super(SET_DQN, self).__init__()
-        h_gate = 256
-        h_cluster = 256
-        h_action = 256
-        self.fc_gate1 = nn.Linear(784*2,h_gate)
-        self.fc_gate2 = nn.Linear(h_gate,1)
+        h_gate = 1024
+        h_cluster = 1024
+        h_action = 1024
+        # dim_image = 784
+        dim_image = 1024
+
+        self.conv1 = nn.Conv2d(1,32,kernel_size=5)
+        self.conv2 = nn.Conv2d(32,64,kernel_size=5)
+
+        self.fc_gate1 = nn.Linear(2*dim_image, h_gate)
+        # self.fc_gate1 = nn.Linear(784*2,h_gate)
+        self.fc_gate2 = nn.Linear(h_gate, 1)
         # self.fc_mode1 = nn.Linear()
         # self.fc_mode2 = nn.Linear()
-        self.fc_cluster1 = nn.Linear(784,h_cluster)
-        self.fc_cluster2 = nn.Linear(h_cluster,h_cluster)
+        self.fc_cluster1 = nn.Linear(dim_image, h_cluster)
+        self.fc_cluster2 = nn.Linear(h_cluster, h_cluster)
 
-        self.fc_action1 = nn.Linear(2*h_cluster,h_action)
-        self.fc_action2 = nn.Linear(h_action,1)
+        self.fc_action1 = nn.Linear(2*h_cluster, h_action)
+        self.fc_action2 = nn.Linear(h_action, 1)
 
     # @profile
     def forward(self, input):
@@ -303,10 +310,10 @@ class SET_DQN(nn.Module):
         # siblings in forms of [[c11, c12, ...], [c21, c22, ...],...] of length batch_size
         # sibling_owner in forms of [o1, o1, ..., o2, ...] of size batch_size
 
-        images, partitions, image_partition_ids, select_i, select_j, action_siblings, p_mat, r_mat, a_mat = input
+        images, select_i, select_j, action_siblings, p_mat, r_mat, a_mat = input
         # images = Variable(images)
-        batch_size = len(action_siblings)
-        n_partition = len(partitions)
+        # batch_size = len(action_siblings)
+        # n_partition = len(partitions)
 
         # tmp = []
         # for x in range(n_partition):
@@ -320,9 +327,15 @@ class SET_DQN(nn.Module):
         # tile_means = torch.cat([all_means[x,...].view(1,-1) for x in image_partition_ids])
 
 
-        p_mat = Variable(p_mat)
+        p_mat = Variable(p_mat.to_dense())
         r_mat = Variable(r_mat.view(-1,1))
         a_mat = Variable(a_mat)
+
+        n_images = images.size(0)
+        images = images.view(-1,1,28,28)
+        images = F.max_pool2d(F.relu(self.conv1(images)),2)
+        images = F.max_pool2d(F.relu(self.conv2(images)),2)
+        images = images.view(n_images,-1)
 
         all_means = torch.mm(torch.t(p_mat), images) # of size n_partitions*dim_feature
         all_means = torch.mul(all_means, r_mat)
@@ -363,20 +376,21 @@ class SET_DQN(nn.Module):
         q_tile_sum = torch.mm(a_mat, q_exp_sum)
         q_table = torch.div(q_exp, q_tile_sum)
         q_table_expand = torch.mul(torch.t(a_mat), q_table.view(1,-1))
+
         # n_assert = torch.sum(a_mat[...,0]).data.type(LongTensor)
         # assert(torch.equal(q_table1[0].data[n_assert,...], q_table2.data[n_assert,...]))
 
         return q_table, q_table_expand
 
 if __name__ == '__main__':
-    images = torch.rand(10,3)
+    images = torch.rand(10,784)
     partitions = [[0],[1,2],[3,4],[5,6,7,8],[9]]
     partition_owner = [0,1,1,2,2,3,3,3,3,4]
     select_i = [1,2,2,4]
     select_j = [0,0,1,3]
     action_siblings = [[0,0,0],[1]]
 
-    input = [images, partitions, partition_owner, select_i, select_j, action_siblings]
+    input = [images, select_i, select_j, action_siblings]
     model = SET_DQN()
     model(input)
 
