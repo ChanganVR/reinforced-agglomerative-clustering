@@ -5,7 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F 
 from torch.autograd import Variable
 import inspect
-from torch.nn.utils import rnn
+# from torch.nn.utils import pack_sequence
 from utils_pad import pack_sequence
 from utils_pad import merge_partition
 # from utils_pad import pad_sequence
@@ -13,9 +13,14 @@ from utils_pad import prepare_sequence
 from utils_pad import sort_partition
 # from torch.nn.utils.rnn import pack_sequence
 
-FloatTensor = torch.cuda.FloatTensor
-LongTensor = torch.cuda.LongTensor
-ByteTensor = torch.cuda.ByteTensor
+if 1:
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+    ByteTensor = torch.cuda.ByteTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+    ByteTensor = torch.ByteTensor
 
 
 class DQRN(nn.Module):
@@ -27,10 +32,10 @@ class DQRN(nn.Module):
         self.gru_low = nn.GRU(input_size, hidden_size_low, batch_first=False, bidirectional=False)
         self.gru_high = nn.GRU(hidden_size_low, hidden_size_high, batch_first=True, bidirectional=False)
 
-        self.state_fc = nn.Linear(hidden_size_high, 32)
-        self.cluster_fc = nn.Linear(hidden_size_low, 32)
-        self.agent_fc1 = nn.Linear(64, 32)
-        self.agent_fc2 = nn.Linear(32, 1)
+        self.state_fc = nn.Linear(hidden_size_high, 1024)
+        self.cluster_fc = nn.Linear(hidden_size_low, 1024)
+        self.agent_fc1 = nn.Linear(2048, 1024)
+        self.agent_fc2 = nn.Linear(1024, 1)
 
         n_action = int(n_sample*(n_sample-1)/2)
         self.row_idx = LongTensor([0]*n_action)
@@ -75,6 +80,7 @@ class DQRN(nn.Module):
         q_table = nn.Softmax(dim=0)(q_table)
 
         return q_table
+
     # @profile
     def forward(self, input):
         partition_batch, images_batch = input
@@ -168,7 +174,7 @@ class CONV_DQRN(nn.Module):
     def init_hidden(self):
         return Variable(torch.zeros(1,1,self.hidden_size_low).type(FloatTensor)), Variable(torch.zeros(1,1,self.hidden_size_high).type(FloatTensor))
 
-    def forward(self, input):
+    def forward_old(self, input):
         partition, images = input
         n_images = images.size(0)
         n_cluster = len(partition)
@@ -217,3 +223,177 @@ class CONV_DQRN(nn.Module):
         q_table = nn.Softmax(dim=0)(q_table)
 
         return q_table
+
+    # @profile
+    def forward(self, input):
+        partition_batch, images_batch = input
+        batch_size = len(partition_batch)
+        n_images = images_batch.size(0)
+
+        all_cluster, inversed_argsort, partition_member = merge_partition(partition_batch)
+
+        features = images_batch.view(-1,1,28,28)
+        features = F.max_pool2d(F.relu(self.conv1(features)),2)
+        features = F.max_pool2d(F.relu(self.conv2(features)),2)
+        features = self.fc(features.view(n_images, -1))
+        packed_seq = pack_sequence([features[cluster] for cluster in all_cluster])
+
+        n_cluster = len(inversed_argsort)
+        repeat_hidden_low = self.hidden_low.repeat(1, n_cluster, 1)
+        _, cluster_rep = self.gru_low(packed_seq, repeat_hidden_low)
+        cluster_rep = torch.squeeze(cluster_rep)
+
+        cluster_rep = cluster_rep[inversed_argsort, :]
+        sorted_partition_member, _, inversed_member_argsort = sort_partition(partition_member)
+        packed_cluster_rep = pack_sequence([cluster_rep[sorted_partition_member[x], :] for x in range(batch_size)])
+
+        repeat_hidden_high = self.hidden_high.repeat(1, batch_size, 1)
+        _, state_rep = self.gru_high(packed_cluster_rep, repeat_hidden_high)
+        state_rep = state_rep.view(-1, self.hidden_size_high)
+        state_rep = state_rep[inversed_member_argsort]
+
+        state_rep = F.relu(self.state_fc(state_rep))
+        cluster_rep = F.relu(self.cluster_fc(cluster_rep))
+
+        n_action = LongTensor([len(partition_batch[x]) * (len(partition_batch[x]) - 1) / 2 for x in range(batch_size)])
+        n_cluster = LongTensor([len(partition_batch[x]) for x in range(batch_size)])
+        if batch_size == 1:
+            cluster_cumsum = LongTensor([0])
+            action_cumsum = LongTensor([0])
+        else:
+            cluster_cumsum = torch.cumsum(n_cluster, dim=0)
+            cluster_cumsum = torch.cat([LongTensor([0]), cluster_cumsum[:-1]])
+            action_cumsum = torch.cumsum(n_action, dim=0)
+            action_cumsum = torch.cat([LongTensor([0]), action_cumsum[:-1]])
+
+        row_idx = torch.cat([self.row_idx[:n_action[y]] + cluster_cumsum[y] for y in range(batch_size)])
+        col_idx = torch.cat([self.col_idx[:n_action[y]] + cluster_cumsum[y] for y in range(batch_size)])
+
+        merge_cluster = cluster_rep[row_idx, :] + cluster_rep[col_idx, :]
+
+        tile_state = torch.cat([state_rep[x, :].repeat(n_action[x], 1) for x in range(batch_size)])
+        merge_rep = torch.cat([tile_state, merge_cluster], dim=1)
+        q_table = F.relu(self.agent_fc1(merge_rep))
+        q_table = self.agent_fc2(q_table)
+
+        q_table = [nn.Softmax(dim=0)(q_table[action_cumsum[x]:action_cumsum[x] + n_action[x]]) for x in range(batch_size)]
+
+        return q_table
+
+class SET_DQN(nn.Module):
+    def __init__(self):
+        super(SET_DQN, self).__init__()
+        h_gate = 1024
+        h_cluster = 1024
+        h_action = 1024
+        # dim_image = 784
+        dim_image = 1024
+
+        self.conv1 = nn.Conv2d(1,32,kernel_size=5)
+        self.conv2 = nn.Conv2d(32,64,kernel_size=5)
+
+        self.fc_gate1 = nn.Linear(2*dim_image, h_gate)
+        # self.fc_gate1 = nn.Linear(784*2,h_gate)
+        self.fc_gate2 = nn.Linear(h_gate, 1)
+        # self.fc_mode1 = nn.Linear()
+        # self.fc_mode2 = nn.Linear()
+        self.fc_cluster1 = nn.Linear(dim_image, h_cluster)
+        self.fc_cluster2 = nn.Linear(h_cluster, h_cluster)
+
+        self.fc_action1 = nn.Linear(2*h_cluster, h_action)
+        self.fc_action2 = nn.Linear(h_action, 1)
+
+    # @profile
+    def forward(self, input):
+        # partitions in forms of [[e1, e2],[e3],...] of length n_partition
+        # partition_owner in forms of [o1, o1, ..., o2, ...] of length n_image
+        # siblings in forms of [[c11, c12, ...], [c21, c22, ...],...] of length batch_size
+        # sibling_owner in forms of [o1, o1, ..., o2, ...] of size batch_size
+
+        images, select_i, select_j, action_siblings, p_mat, r_mat, a_mat = input
+        # images = Variable(images)
+        # batch_size = len(action_siblings)
+        # n_partition = len(partitions)
+
+        # tmp = []
+        # for x in range(n_partition):
+        #     tmp1 = partitions[x]
+        #     tmp1 = LongTensor(tmp1)
+        #     tmp2 = torch.mean(images[tmp1],dim=0).view(1,-1)
+        #     tmp.append(tmp2)
+        # all_means = torch.cat(tmp)
+
+        # all_means = torch.cat([torch.mean(images[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)])
+        # tile_means = torch.cat([all_means[x,...].view(1,-1) for x in image_partition_ids])
+
+
+        p_mat = Variable(p_mat.to_dense())
+        r_mat = Variable(r_mat.view(-1,1))
+        a_mat = Variable(a_mat)
+
+        n_images = images.size(0)
+        images = images.view(-1,1,28,28)
+        images = F.max_pool2d(F.relu(self.conv1(images)),2)
+        images = F.max_pool2d(F.relu(self.conv2(images)),2)
+        images = images.view(n_images,-1)
+
+        all_means = torch.mm(torch.t(p_mat), images) # of size n_partitions*dim_feature
+        all_means = torch.mul(all_means, r_mat)
+        tile_means = torch.mm(p_mat, all_means)
+        gate_input = torch.cat([images, tile_means], dim=1)
+        # assert(torch.equal(all_means.data, all_means2.data))
+        # assert(torch.equal(tile_means, tile_means2))
+
+        gate_output_shared = F.relu(self.fc_gate1(gate_input))
+        gate_output_shared  = self.fc_gate2(gate_output_shared)
+        # gate_output = torch.cat([nn.Softmax(dim=0)(gate_output_shared[partitions[x],...]) for x in range(n_partition)], dim=0)
+
+        gate_output_exp = torch.exp(gate_output_shared) # of size n_image*1
+        exp_sum = torch.mm(torch.t(p_mat), gate_output_exp) # of size n_partition*1
+        tile_exp_sum = torch.mm(p_mat, exp_sum)
+        gate_output = torch.div(gate_output_exp, tile_exp_sum)
+        # assert(torch.equal(gate_output, gate_output2))
+
+        cluster_input_shared = torch.mul(images, gate_output) # of size n_image*dim_feature
+        # cluster_input = torch.cat([torch.sum(cluster_input_shared[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)], dim=0)
+        cluster_input = torch.mm(torch.t(p_mat), cluster_input_shared)
+
+        # if not torch.equal(cluster_input.data, cluster_input2.data):
+        #     incon = torch.sum(torch.eq(cluster_input.data, cluster_input2.data))
+        #     print 'incon rate', (incon+0.0)/torch.numel(cluster_input.data), torch.numel(cluster_input.data)-incon, torch.numel(cluster_input.data)
+
+        cluster_output = F.relu(self.fc_cluster1(cluster_input))
+        cluster_output = self.fc_cluster2(cluster_output)
+
+        cluster_pairs = torch.cat([cluster_output[select_i,...], cluster_output[select_j,...]], dim=1)
+        q_table = F.relu(self.fc_action1(cluster_pairs))
+        q_table = self.fc_action2(q_table)
+
+        # q_table1 = [nn.Softmax(dim=0)(q_table[action_siblings[x]]) for x in range(batch_size)]
+
+        q_exp = torch.exp(q_table) # of size total_action*1
+        q_exp_sum = torch.mm(torch.t(a_mat), q_exp) # of size batch_size*1
+        q_tile_sum = torch.mm(a_mat, q_exp_sum)
+        q_table = torch.div(q_exp, q_tile_sum)
+        q_table_expand = torch.mul(torch.t(a_mat), q_table.view(1,-1))
+
+        # n_assert = torch.sum(a_mat[...,0]).data.type(LongTensor)
+        # assert(torch.equal(q_table1[0].data[n_assert,...], q_table2.data[n_assert,...]))
+
+        return q_table, q_table_expand
+
+if __name__ == '__main__':
+    images = torch.rand(10,784)
+    partitions = [[0],[1,2],[3,4],[5,6,7,8],[9]]
+    partition_owner = [0,1,1,2,2,3,3,3,3,4]
+    select_i = [1,2,2,4]
+    select_j = [0,0,1,3]
+    action_siblings = [[0,0,0],[1]]
+
+    input = [images, select_i, select_j, action_siblings]
+    model = SET_DQN()
+    model(input)
+
+
+
+

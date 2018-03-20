@@ -7,9 +7,117 @@ import itertools
 import numpy as np
 import collections
 
-FloatTensor = torch.cuda.FloatTensor
-LongTensor = torch.cuda.LongTensor
-ByteTensor = torch.cuda.ByteTensor
+if 1:
+    FloatTensor = torch.cuda.FloatTensor
+    LongTensor = torch.cuda.LongTensor
+    ByteTensor = torch.cuda.ByteTensor
+else:
+    FloatTensor = torch.FloatTensor
+    LongTensor = torch.LongTensor
+    ByteTensor = torch.ByteTensor
+
+def get_select(n_cluster, start):
+    n_action = n_cluster*(n_cluster-1)/2
+    select_i = [start]*n_action
+    select_j = [start]*n_action
+    count = 0
+    for i in range(n_cluster):
+        for j in range(i):
+            select_i[count] += i
+            select_j[count] += j
+            count += 1
+
+    return select_i, select_j
+
+# @profile
+def prep_partition(partitions):
+    batch_size = len(partitions)
+    # cluster_batch_id = [idx for idx,p in enumerate(partitions) for x in p]
+    chained_partitions = list(itertools.chain.from_iterable(partitions))
+
+
+    # image_batch_id = [cluster_batch_id[idx] for idx,p in enumerate(chained_partitions) for x in p]
+    batch_cumsum = [0] + np.cumsum([get_partition_length(p) for p in partitions]).tolist()
+    # cumed_partitions = [[x+batch_cumsum[cluster_batch_id[id]] for x in cluster] for id,cluster in enumerate(chained_partitions)]
+
+    # partition_owner indicates the owner cluster for each element
+    partition_size = [len(p) for p in chained_partitions]
+    n_images = sum(partition_size)
+    # partition_owner = [-1]*n_images
+    # for idx,p in enumerate(cumed_partitions):
+    #     for e in p:
+    #         partition_owner[e] = idx
+
+    n_partitions = len(chained_partitions)
+
+    # p_mat = np.zeros((n_images, n_partitions))
+    # for i_p in range(n_partitions):
+    #     p_mat[cumed_partitions[i_p],i_p] = 1
+    # p_mat = torch.from_numpy(p_mat).type(FloatTensor)
+
+    p_row_raw = list(itertools.chain.from_iterable(chained_partitions))
+    p_row_raw = LongTensor(p_row_raw)
+    p_row_addon = list(itertools.chain.from_iterable([[batch_cumsum[idx]]*(batch_cumsum[idx+1]-batch_cumsum[idx]) for idx in range(batch_size)]))
+    p_row_addon = LongTensor(p_row_addon)
+    p_row = p_row_raw + p_row_addon
+    p_col = list(itertools.chain.from_iterable([[idx]*x for idx,x in enumerate(partition_size)]))
+    p_col = LongTensor(p_col)
+
+    # p_mat2 = torch.zeros((n_images, n_partitions)).type(FloatTensor)
+    # p_mat2[p_row,p_col] = 1
+    i = torch.cat([p_row.view(1,-1), p_col.view(1,-1)], dim=0)
+    v = torch.ones(n_images).type(FloatTensor)
+    p_mat = torch.cuda.sparse.FloatTensor(i,v,torch.Size([n_images, n_partitions]))
+
+    r_mat = torch.reciprocal(torch.FloatTensor(partition_size))
+    r_mat = r_mat.type(FloatTensor)
+
+    select_i = []
+    select_j = []
+    action_siblings = []
+    batch_cluster_count = torch.LongTensor([len(p) for p in partitions])
+    batch_cluster_cumsum = torch.cat([torch.LongTensor([0]),torch.cumsum(batch_cluster_count, dim=0)])
+    batch_action_count = torch.mul(batch_cluster_count,(batch_cluster_count-1))/2
+    batch_action_cumsum = torch.cat([torch.LongTensor([0]),torch.cumsum(batch_action_count, dim=0)])
+
+    start = 0
+    action_cum = 0
+    for i in range(len(partitions)):
+        # this_i, this_j = get_select(batch_cluster_count[i], start)
+        this_i, this_j = get_select(batch_cluster_count[i], batch_cluster_cumsum[i])
+        select_i.extend(this_i)
+        select_j.extend(this_j)
+        n_action = batch_cluster_count[i]*(batch_cluster_count[i]-1)/2
+        # start += batch_cluster_count[i]
+        action_siblings.append(range(action_cum, action_cum+n_action))
+        action_cum += n_action
+
+    # count = 0
+    # max_p = 30
+    # all_i = torch.zeros(max_p*(max_p-1)/2)
+    # all_j = torch.zeros(max_p*(max_p-1)/2)
+    # for i in range(30):
+    #     for j in range(i):
+    #         all_i[count] = i
+    #         all_j[count] = j
+    #         count += 1
+    # select_i2 = torch.cat([all_i[:batch_action_count[x]]+batch_cluster_cumsum[x] for x in range(batch_size)])
+    # select_j2 = torch.cat([all_j[:batch_action_count[x]]+batch_cluster_cumsum[x] for x in range(batch_size)])
+
+    # batch_action_count = [x*(x-1)/2 for x in batch_cluster_count]
+    # batch_action_cumsum = np.cumsum([0]+batch_action_count)
+    a_mat = torch.zeros((batch_action_cumsum[-1], batch_size))
+    for i_b in range(batch_size):
+        a_mat[batch_action_cumsum[i_b]:batch_action_cumsum[i_b+1],i_b] = 1
+
+    a_mat = a_mat.type(FloatTensor)
+
+    train_aux = [select_i, select_j, action_siblings, p_mat, r_mat, a_mat]
+    # batch_action_cumsum = torch.from_numpy(batch_action_cumsum[:-1]).type(LongTensor)
+    batch_action_cumsum = batch_action_cumsum[:-1].type(LongTensor)
+
+    return train_aux, batch_action_cumsum
+
 
 def get_partition_length(partition):
     return len(list(itertools.chain.from_iterable(partition)))
@@ -53,6 +161,7 @@ def prepare_sequence(partition, features, volatile=False):
     return packed_seq
 
 
+# @profile
 def pad_sequence(sequences, batch_first=False):
     r"""Pad a list of variable length Variables with zero
 
@@ -117,7 +226,7 @@ def pad_sequence(sequences, batch_first=False):
     return out_variable
 
 
-
+# @profile
 def pack_sequence(sequences):
     r"""Packs a list of variable length Variables
 
@@ -151,5 +260,16 @@ def pack_sequence(sequences):
     return pack_padded_sequence(pad_sequence(sequences), [v.size(0) for v in sequences])
 
 if __name__ == '__main__':
-    partition_batch = [[[0,1,3],[2]],[[0,3],[1,2]],[[0,1,2,3,4,5],[0,1]]]
-    print(merge_partition(partition_batch))
+    partition_batch = [[[0,1,3],[2]],[[1,2],[0,3],[4],[5,6,7,8]],[[0,1,2,3,4,5],[6,7]]]
+    # print(prep_partition(partition_batch))
+
+    from Agent import SET_DQN
+    model = SET_DQN()
+    model.cuda()
+    train_aux, batch_action_cumsum = prep_partition(partition_batch)
+    images = torch.cat([torch.arange(21).view(-1,1),torch.arange(21).view(-1,1)],dim=1).type(FloatTensor)
+    images = Variable(images)
+    model_input = [images] + train_aux
+
+    q_table, q_table_expand = model(model_input)
+
