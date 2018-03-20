@@ -116,7 +116,7 @@ def optimize():
 
     print('non batch time: ', time.time()-start)
 
-# @profile
+@profile
 def optimize_batch():
     if len(memory) < start_mul*batch_size:
         return
