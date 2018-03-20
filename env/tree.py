@@ -20,8 +20,8 @@ class Tree(object):
     def __init__(self, class_num, labels, reward):
         self.labels = labels
         self.leaf_num = len(self.labels)
-        print('\t'.join([str(x) for x in labels]))
-        print('\t'.join([str(x) for x in range(len(labels))]))
+        # print('\t'.join([str(x) for x in labels]))
+        # print('\t'.join([str(x) for x in range(len(labels))]))
         leaf_nodes = [Node(i, None) for i in range(len(labels))]
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num

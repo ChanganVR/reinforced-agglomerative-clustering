@@ -116,7 +116,7 @@ def optimize():
 
     print('non batch time: ', time.time()-start)
 
-@profile
+# @profile
 def optimize_batch():
     if len(memory) < start_mul*batch_size:
         return
@@ -179,8 +179,12 @@ def optimize_batch():
 
 
 # @profile
-def run_episode(seed, phase, print_partition=False):
-    partition, images = clustering_env.reset(seed=seed)
+def run_episode(seed, phase, test_set, print_partition=False):
+    if test_set == 'test':
+        partition, images = clustering_env_test.reset(seed=seed)
+    else:
+        partition, images = clustering_env.reset(seed=seed)
+
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
@@ -195,22 +199,25 @@ def run_episode(seed, phase, print_partition=False):
         action = select_action(partition, images, phase)
 
         action_pair = pair_from_index(action[0])
-        reward, next_partition, purity = clustering_env.step(action_pair)
+        if test_set == 'test':
+            next_partition, purity = clustering_env_test.step(action_pair)
+        else:
+            reward, next_partition, purity = clustering_env.step(action_pair)
+
         next_partition = next_partition.cluster_assignments
 
         if print_partition:
             print('step %d partition: %s'%(t+2,next_partition))
 
-        episode_reward += reward
-        reward_list.append(reward)
-        reward = FloatTensor([reward])
-
+        # episode_reward += reward
+        # reward_list.append(reward)
         if t == t_stop:
             final_partition = next_partition
             next_partition = None
             max_p = max([len(p) for p in final_partition])
 
         if phase == 'train':
+            reward = FloatTensor([reward])
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
             optimize_batch()
@@ -223,17 +230,24 @@ def run_episode(seed, phase, print_partition=False):
     return purity, max_p
 
 
-def test(start_seed=0):
-    test_purity = [0]*test_max
+def test(test_set):
     random.seed(0)
-    test_seeds = random.sample(range(train_max), test_max)
+    if test_set == 'train':
+        test_seeds = random.sample(range(train_max), test_max_train)
+        test_purity = [0] * test_max_train
+    if test_set == 'val':
+        test_seeds = random.sample(range(train_max, train_max+10*test_max_other), test_max_other)
+        test_purity = [0] * test_max_other
+    if test_set == 'test':
+        test_seeds = random.sample(range(10*test_max_other), test_max_other)
+        test_purity = [0] * test_max_other
+
     p_stat = []
     for i_test,seed in enumerate(test_seeds):
-        test_seed = seed + start_seed
-        test_purity[i_test], max_p = run_episode(seed=test_seed, phase='test', print_partition=False)
+        test_purity[i_test], max_p = run_episode(seed=seed, phase='test', test_set=test_set)
         p_stat.append(max_p)
 
-    avg_test = sum(test_purity) / test_max
+    avg_test = sum(test_purity) / len(test_purity)
     avg_pmax = sum(p_stat)/len(p_stat)
     print('average max cluster size: ', avg_pmax)
 
@@ -251,14 +265,16 @@ batch_size = 100
 start_mul = 20
 
 data_dir = 'dataset'
-sampling_size = 50
+sampling_size = 10
 t_stop = 4
-first_opt = math.ceil((batch_size*start_mul)/(sampling_size-t_stop-1))
+first_opt = math.ceil((batch_size*start_mul)/(t_stop+1))
 print('first optmized in episode ', first_opt)
 clustering_env = env.Env(data_dir, sampling_size, reward='global_purity')
+clustering_env_test = env.Env(data_dir, sampling_size, reward='global_purity', train=False)
 
-train_max = 1000
-test_max = 100
+train_max = 100
+test_max_train = 100
+test_max_other = 100
 epoch_episode_train = 200
 n_episodes = 100000
 
@@ -284,23 +300,20 @@ steps_done = 0
 train_count = 0
 test_count = 0
 
-all_test_purity = []
-transductive_purity = [0]*test_max
-inductive_purity = [0]*test_max
-train_purity = [0]*train_max
-
 episode_trained = 0
 episode_tested = 0
 for i_episode in range(n_episodes):
 
     seed = i_episode%train_max
-    train_purity[i_episode%train_max], _ = run_episode(seed, phase='train')
+    run_episode(seed, phase='train', test_set='train')
 
     # if i_episode%epoch_episode_train == 0:
     if i_episode == 0 or ((i_episode >= first_opt) and (i_episode-first_opt)%epoch_episode_train == 0):
-        p_trans = test()
-        p_in = test(start_seed=train_max)
-        print('Episode {} transductive purity: {:.4f}, inductive purity: {:.4f}'.format(i_episode, p_trans, p_in))
+        p_train = test(test_set='train')
+        p_val = test(test_set='val')
+        p_test = test(test_set='test')
+        # print('Episode {} train purity: {:.4f}, val purity: {:.4f}'.format(i_episode, p_train, p_val))
+        print('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.format(i_episode, p_train, p_val, p_test))
 
     # if i_episode%10000 == 1000:
     #     torch.save(model.state_dict(), '/local-scratch/chenleic/cluster_models/model_1000.pt')
