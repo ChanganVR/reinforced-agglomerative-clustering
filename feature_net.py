@@ -29,8 +29,8 @@ class mnist_cnn(nn.Module):
 
 if __name__ == '__main__':
     data_dir = 'dataset'
-    train_images, train_labels = env.mnist_read(True, data_dir)
-    test_images, test_labels = env.mnist_read(False, data_dir)
+    train_images, train_labels = env.load_mnist(True, data_dir)
+    test_images, test_labels = env.load_mnist(False, data_dir)
 
     train_images = FloatTensor(train_images)
     train_labels = LongTensor(train_labels.astype(int))

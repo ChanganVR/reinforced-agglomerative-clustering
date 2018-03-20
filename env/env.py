@@ -4,6 +4,9 @@ import numpy as np
 from collections import defaultdict
 import random
 from .tree import Tree
+import logging
+
+logger = logging.getLogger()
 
 
 class Action(object):
@@ -33,29 +36,23 @@ class State(object):
 
 
 class Env(object):
-    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', train=True, overlap=True,
-                 reward='local_purity'):
+    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', phase='train', reward='local_purity'):
         if dataset == 'mnist':
-            images, labels = mnist_read(train, data_dir)
-            label_dict = defaultdict(list)
-            for i in range(labels.shape[0]):
-                label_dict[labels[i]].append(images[i])
-            print("Number of classes in mnist:", len(label_dict))
-            for key in label_dict:
-                print("Number of images in digit ", key, " is ", len(label_dict[key]))
+            label_dict = load_mnist(phase, data_dir)
             self.label_dict = label_dict
         else:
-            raise ValueError("dataset does not exist")
+            raise NotImplementedError
         if sampling_size % class_num != 0:
             raise ValueError("Sampling size should be a multiple of class number")
+        assert phase in ['train', 'val', 'test'], 'Phase does not exist'
+        assert reward in ['local_purity', 'global_purity', 'uniform']
+
         self.sampling_size = sampling_size
         self.class_num = class_num
-        self.overlap = overlap
-        self.train = train
+        self.phase = phase
         self.sampled_features = []
         self.sampled_labels = []
         self.tree = None
-        assert reward in ['local_purity', 'global_purity', 'uniform']
         self.reward = reward
 
     def reset(self, seed=None, steps=0):
@@ -69,14 +66,7 @@ class Env(object):
         random.seed(seed)
         sampled_features = []
         sampled_labels = []
-        if self.overlap:
-            sampled_classes = random.sample(self.label_dict.keys(), self.class_num)
-        else:
-            if self.train:
-                sampled_classes = sorted(self.label_dict.keys())[:self.class_num]
-            else:
-                sampled_classes = sorted(self.label_dict.keys())[self.class_num:]
-        for key in sampled_classes:
+        for key in self.label_dict:
             sampled_features += random.sample(self.label_dict[key], int(self.sampling_size/self.class_num))
             sampled_labels += [key] * int(self.sampling_size/self.class_num)
 
@@ -110,33 +100,50 @@ class Env(object):
         reward = self.tree.merge(action.a, action.b)
         assignments = self.tree.get_assignment()
         purity = self.tree.current_purity()
-        if self.train:
+        if self.phase == 'train':
             return reward, State(assignments), purity
         else:
             return State(assignments), purity
 
 
-def mnist_read(train, path):
+def load_mnist(phase, path):
     """
     Python function for importing the MNIST data set.  It returns a list tuple
     with the second element being the label and the first element
     being a numpy.uint8 2D array of pixel data for the given image.
     """
+    def read_file(image_file, label_file):
+        # Load everything in some numpy arrays
+        with open(label_file, 'rb') as fo:
+            fo.read(8)
+            labels = np.fromfile(fo, dtype=np.int8)
+        with open(image_file, 'rb') as fo:
+            fo.read(16)
+            images = np.fromfile(fo, dtype=np.uint8).reshape(len(labels), -1)
+        return images, labels
 
-    if train:
-        fname_img = os.path.join(path, 'train-images-idx3-ubyte')
-        fname_lbl = os.path.join(path, 'train-labels-idx1-ubyte')
+    train_image_file = os.path.join(path, 'train-images-idx3-ubyte')
+    train_label_file = os.path.join(path, 'train-labels-idx1-ubyte')
+    test_image_file = os.path.join(path, 't10k-images-idx3-ubyte')
+    test_label_file = os.path.join(path, 't10k-labels-idx1-ubyte')
+    if phase == 'train':
+        images, labels = read_file(train_image_file, train_label_file)
+        numbers = [0, 1, 2, 3, 4]
+    elif phase == 'val':
+        images, labels = read_file(test_image_file, test_label_file)
+        numbers = [0, 1, 2, 3, 4]
     else:
-        fname_img = os.path.join(path, 't10k-images-idx3-ubyte')
-        fname_lbl = os.path.join(path, 't10k-labels-idx1-ubyte')
+        train_images, train_labels = read_file(train_image_file, train_label_file)
+        test_images, test_labels = read_file(test_image_file, test_label_file)
+        images = np.concatenate([train_images, test_images])
+        labels = np.concatenate([train_labels, test_labels])
+        numbers = [5, 6, 7, 8, 9]
+    logger.info('Numbers used in {} phase are {}'.format(phase, ' '.join([str(x) for x in numbers])))
 
-    # Load everything in some numpy arrays
-    with open(fname_lbl, 'rb') as flbl:
-        magic, num = struct.unpack(">II", flbl.read(8))
-        labels = np.fromfile(flbl, dtype=np.int8)
+    label_dict = defaultdict(list)
+    for i in range(labels.shape[0]):
+        if labels[i] in numbers:
+            label_dict[labels[i]].append(images[i])
 
-    with open(fname_img, 'rb') as fimg:
-        magic, num, rows, cols = struct.unpack(">IIII", fimg.read(16))
-        images = np.fromfile(fimg, dtype=np.uint8).reshape(len(labels), -1)
-
-    return images, labels
+    logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
+    return label_dict

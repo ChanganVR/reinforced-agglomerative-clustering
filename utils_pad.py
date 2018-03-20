@@ -18,8 +18,8 @@ else:
 
 def get_select(n_cluster, start):
     n_action = n_cluster*(n_cluster-1)/2
-    select_i = [start]*n_action
-    select_j = [start]*n_action
+    select_i = [start]*int(n_action)
+    select_j = [start]*int(n_action)
     count = 0
     for i in range(n_cluster):
         for j in range(i):
@@ -89,7 +89,7 @@ def prep_partition(partitions):
         select_j.extend(this_j)
         n_action = batch_cluster_count[i]*(batch_cluster_count[i]-1)/2
         # start += batch_cluster_count[i]
-        action_siblings.append(range(action_cum, action_cum+n_action))
+        action_siblings.append(range(int(action_cum), int(action_cum+n_action)))
         action_cum += n_action
 
     # count = 0
