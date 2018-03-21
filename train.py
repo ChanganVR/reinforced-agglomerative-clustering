@@ -5,6 +5,7 @@ import random
 import math
 import time
 import logging
+from logging import handlers
 import torch
 import os
 import sys
@@ -186,7 +187,7 @@ def optimize_batch():
 
 # @profile
 def run_episode(seed, phase, current_env, print_partition=False):
-    partition, images = current_env.reset(seed=seed)
+    partition, images, _ = current_env.reset(phase, seed=seed)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
@@ -225,9 +226,9 @@ def run_episode(seed, phase, current_env, print_partition=False):
     return purity, max_cluster
 
 
-def test(test_set, current_env):
+def test(split, current_env):
     random.seed(0)
-    if test_set == 'train':
+    if split == 'train':
         test_seeds = range(train_seed_size)
     else:
         test_seeds = [random.random()+train_seed_size for _ in range(test_episodes)]
@@ -275,17 +276,25 @@ if not os.path.exists('results'):
     os.mkdir('results')
 log_file = 'results/S_{}_step_{}.log'.format(sampling_size, t_stop+1)
 
-file_handler = logging.FileHandler(filename=log_file, mode='w')
-stdout_handler = logging.StreamHandler(sys.stdout)
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, stdout_handler],
-                    format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
-logger = logging.getLogger()
+
+logger = logging.getLogger('')
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s, %(levelname)s: %(message)s")
+
+ch = logging.StreamHandler(sys.stdout)
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+fh = handlers.RotatingFileHandler(log_file, mode='w')
+fh.setFormatter(formatter)
+logger.addHandler(fh)
+
 
 first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
 logger.info('first optimized in episode {}'.format(first_opt))
-train_env = env.Env(data_dir, sampling_size, reward='global_purity', phase='train')
-val_env = env.Env(data_dir, sampling_size, reward='global_purity', phase='val')
-test_env = env.Env(data_dir, sampling_size, reward='global_purity', phase='test')
+train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
+val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
+test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
 
 model = SET_DQN()
 model.cuda()
@@ -298,8 +307,8 @@ for i_episode in range(n_episodes):
     run_episode(seed, phase='train', current_env=train_env)
 
     if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
-        p_train = test(test_set='train', current_env=train_env)
-        p_val = test(test_set='val', current_env=val_env)
-        p_test = test(test_set='test', current_env=test_env)
+        p_train = test(split='train', current_env=train_env)
+        p_val = test(split='val', current_env=val_env)
+        p_test = test(split='test', current_env=test_env)
         logger.info('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.
                     format(i_episode, p_train, p_val, p_test))

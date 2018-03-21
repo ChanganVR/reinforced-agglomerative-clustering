@@ -65,6 +65,7 @@ class Tree(object):
         return reward
 
     def step(self):
+        # do one-step correct merging
         assignments = self.get_assignment()
         candidate_pairs = [(i, j) for i in range(len(assignments)) for j in range(i)]
         random.shuffle(candidate_pairs)
