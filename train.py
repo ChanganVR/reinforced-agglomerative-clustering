@@ -257,7 +257,7 @@ start_mul = 20
 train_seed_size = 100
 test_episodes = 100
 epoch_episode_train = 200
-n_episodes = 100000
+n_episodes = 1000
 
 DOUBLE_Q = False
 update_ref = 1
