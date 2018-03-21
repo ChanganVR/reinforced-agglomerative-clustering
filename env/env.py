@@ -1,3 +1,4 @@
+from __future__ import division
 import os
 import struct
 import numpy as np
@@ -36,39 +37,43 @@ class State(object):
 
 
 class Env(object):
-    def __init__(self, data_dir, sampling_size, class_num=5, dataset='mnist', phase='train', reward='local_purity'):
+    def __init__(self, data_dir, sampling_size, dataset='mnist', split='train', reward='local_purity'):
         if dataset == 'mnist':
-            label_dict = load_mnist(phase, data_dir)
-            self.label_dict = label_dict
+            label_dict, digit_classes = load_mnist(split, data_dir)
         else:
             raise NotImplementedError
-        if sampling_size % class_num != 0:
-            raise ValueError("Sampling size should be a multiple of class number")
-        assert phase in ['train', 'val', 'test'], 'Phase does not exist'
+        assert split in ['train', 'val', 'test'], 'split does not exist'
         assert reward in ['local_purity', 'global_purity', 'uniform']
 
+        self.label_dict = label_dict
+        self.digit_classes = digit_classes
         self.sampling_size = sampling_size
-        self.class_num = class_num
-        self.phase = phase
+        self.split = split
         self.sampled_features = []
         self.sampled_labels = []
         self.tree = None
         self.reward = reward
 
-    def reset(self, seed=None, steps=0):
+    def reset(self, phase, seed=None):
         """
         Define state as the combination of cluster assignments and sampled_features
         :return:
         """
-        # check if steps is valid
-        if steps < 0 or steps > self.sampling_size - self.class_num:
-            raise ValueError('Steps argument is invalid')
         random.seed(seed)
+        # only training in train_env will have random subset of digit classes
+        if self.split == 'train' and phase == 'train':
+            class_num = random.randrange(2, 6)
+        else:
+            class_num = 5
+        sampled_class = random.sample(self.digit_classes, class_num)
         sampled_features = []
         sampled_labels = []
-        for key in self.label_dict:
-            sampled_features += random.sample(self.label_dict[key], int(self.sampling_size/self.class_num))
-            sampled_labels += [key] * int(self.sampling_size/self.class_num)
+        for key in sampled_class:
+            sampled_class_size = self.sampling_size / class_num
+            if key == sampled_class[-1]:
+                sampled_class_size += self.sampling_size % class_num
+            sampled_features += random.sample(self.label_dict[key], int(sampled_class_size))
+            sampled_labels += [key] * int(sampled_class_size)
 
         # shuffle features and labels and keep the order
         combined = list(zip(sampled_features, sampled_labels))
@@ -79,13 +84,10 @@ class Env(object):
         # print({i: label for i, label in enumerate(sampled_labels)})
 
         # create a new tree using sampled data
-        self.tree = Tree(self.class_num, sampled_labels, self.reward)
-        # do steps number correct merge
-        for i in range(steps):
-            self.tree.step()
+        self.tree = Tree(class_num, sampled_labels, self.reward)
         assignments = self.tree.get_assignment()
         # purity = self.tree.current_purity()
-        return State(assignments), self.sampled_features
+        return State(assignments), self.sampled_features, class_num
 
     def step(self, action):
         """
@@ -100,13 +102,29 @@ class Env(object):
         reward = self.tree.merge(action.a, action.b)
         assignments = self.tree.get_assignment()
         purity = self.tree.current_purity()
-        if self.phase == 'train':
+        if self.split == 'train':
             return reward, State(assignments), purity
         else:
             return reward, State(assignments), purity
 
+    def correct_episode(self, seed=None, steps=None):
+        # do steps number correct merge
+        init_assignments, _, class_num = self.reset(seed)
+        if steps is None:
+            # use the same class number as env is initialized
+            steps = self.sampling_size - class_num
+        all_assignments = list()
+        all_assignments.append(init_assignments)
+        for i in range(steps):
+            self.tree.step()
+            assignments = self.tree.get_assignment()
+            all_assignments.append(assignments)
 
-def load_mnist(phase, path):
+        # return steps+1 assignments and sampled feature
+        return all_assignments, self.sampled_features
+
+
+def load_mnist(split, path):
     """
     Python function for importing the MNIST data set.  It returns a list tuple
     with the second element being the label and the first element
@@ -126,10 +144,10 @@ def load_mnist(phase, path):
     train_label_file = os.path.join(path, 'train-labels-idx1-ubyte')
     test_image_file = os.path.join(path, 't10k-images-idx3-ubyte')
     test_label_file = os.path.join(path, 't10k-labels-idx1-ubyte')
-    if phase == 'train':
+    if split == 'train':
         images, labels = read_file(train_image_file, train_label_file)
         numbers = [0, 1, 2, 3, 4]
-    elif phase == 'val':
+    elif split == 'val':
         images, labels = read_file(test_image_file, test_label_file)
         numbers = [0, 1, 2, 3, 4]
     else:
@@ -138,7 +156,7 @@ def load_mnist(phase, path):
         images = np.concatenate([train_images, test_images])
         labels = np.concatenate([train_labels, test_labels])
         numbers = [5, 6, 7, 8, 9]
-    logger.info('Numbers used in {} phase are {}'.format(phase, ' '.join([str(x) for x in numbers])))
+    logger.info('Numbers used in {} split are {}'.format(split, ' '.join([str(x) for x in numbers])))
 
     label_dict = defaultdict(list)
     for i in range(labels.shape[0]):
@@ -146,4 +164,4 @@ def load_mnist(phase, path):
             label_dict[labels[i]].append(images[i])
 
     logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
-    return label_dict
+    return label_dict, numbers
