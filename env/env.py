@@ -103,7 +103,7 @@ class Env(object):
         if self.phase == 'train':
             return reward, State(assignments), purity
         else:
-            return State(assignments), purity
+            return reward, State(assignments), purity
 
 
 def load_mnist(phase, path):

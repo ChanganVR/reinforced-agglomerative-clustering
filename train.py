@@ -197,10 +197,7 @@ def run_episode(seed, phase, current_env, print_partition=False):
     for t in count():
         action = select_action(partition, images, phase)
         action_pair = pair_from_index(action[0])
-        if phase == 'train':
-            reward, next_partition, purity = current_env.step(action_pair)
-        else:
-            next_partition, purity = current_env.step(action_pair)
+        reward, next_partition, purity = current_env.step(action_pair)
 
         next_partition = next_partition.cluster_assignments
 
@@ -228,13 +225,17 @@ def run_episode(seed, phase, current_env, print_partition=False):
     return purity, max_cluster
 
 
-def test(phase, current_env):
+def test(test_set, current_env):
     random.seed(0)
-    test_seeds = [random.random() for _ in range(test_episodes)]
+    if test_set == 'train':
+        test_seeds = range(train_seed_size)
+    else:
+        test_seeds = [random.random()+train_seed_size for _ in range(test_episodes)]
+
     test_purity = [0] * test_episodes
     max_clusters = []
     for i_test, seed in enumerate(test_seeds):
-        test_purity[i_test], max_cluster = run_episode(seed=seed, phase=phase, current_env=current_env)
+        test_purity[i_test], max_cluster = run_episode(seed=seed, phase='test', current_env=current_env)
         max_clusters.append(max_cluster)
 
     avg_test = sum(test_purity) / len(test_purity)
@@ -297,8 +298,8 @@ for i_episode in range(n_episodes):
     run_episode(seed, phase='train', current_env=train_env)
 
     if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
-        p_train = test(phase='train', current_env=train_env)
-        p_val = test(phase='val', current_env=val_env)
-        p_test = test(phase='test', current_env=test_env)
+        p_train = test(test_set='train', current_env=train_env)
+        p_val = test(test_set='val', current_env=val_env)
+        p_test = test(test_set='test', current_env=test_env)
         logger.info('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.
                     format(i_episode, p_train, p_val, p_test))
