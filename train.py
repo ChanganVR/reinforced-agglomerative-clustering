@@ -39,6 +39,33 @@ def pair_from_index(index):
 
     return env.Action(i, j)
 
+def shuffle_exp(exp):
+    partition, action, next_partition = exp[:3]
+    n_cluster = len(partition)
+    perm = range(n_cluster)
+    random.shuffle(perm)
+
+    perm_partition = [0]*n_cluster
+    for i in range(n_cluster):
+        perm_partition[perm[i]] = partition[i]
+
+    action = action[0]
+    a_i = int((2 * action + 0.25) ** 0.5 + 0.5)
+    a_j = int(action - a_i * (a_i - 1) / 2)
+    a_j, a_i = sorted([perm[a_i], perm[a_j]])
+    perm_action = LongTensor([int(a_i*(a_i-1)/2+a_j)])
+
+    if next_partition is None:
+        perm_next_partition = None
+    else:
+        perm_next_partition = next_partition[:]
+        random.shuffle(perm_next_partition)
+
+    perm_exp = [perm_partition, perm_action, perm_next_partition]
+    perm_exp.extend(exp[3:])
+
+    return perm_exp
+
 
 class ReplayMemory:
     def __init__(self, capacity):
@@ -52,8 +79,11 @@ class ReplayMemory:
         self.memory[self.position] = exp
         self.position = (self.position + 1) % self.capacity
 
-    def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
+    def sample(self, batch_size, shuffle=False):
+        if not shuffle:
+            return random.sample(self.memory, batch_size)
+        else:
+            return [shuffle_exp(x) for x in random.sample(self.memory, batch_size)]
 
     def is_full(self):
         return len(self.memory) == self.capacity
@@ -122,13 +152,13 @@ def optimize():
     logger.info('non batch time: ', time.time() - start)
 
 
-# @profile
+@profile
 def optimize_batch():
     if len(memory) < start_mul * batch_size:
         return
 
     start = time.time()
-    replay_batch = memory.sample(batch_size)
+    replay_batch = memory.sample(batch_size, shuffle=True)
     replay_partition = [replay[0] for replay in replay_batch]
     replay_next_partition = [replay[2] for replay in replay_batch]
 
