@@ -62,9 +62,10 @@ class Env(object):
         random.seed(seed)
         # only training in train_env will have random subset of digit classes
         if self.split == 'train' and phase == 'train':
-            class_num = random.randrange(2, 6)
+            # fixed number of digit classes in training
+            class_num = 3
         else:
-            class_num = 5
+            class_num = 3
         sampled_class = random.sample(self.digit_classes, class_num)
         sampled_features = []
         sampled_labels = []
@@ -146,16 +147,16 @@ def load_mnist(split, path):
     test_label_file = os.path.join(path, 't10k-labels-idx1-ubyte')
     if split == 'train':
         images, labels = read_file(train_image_file, train_label_file)
-        numbers = [0, 1, 2, 3, 4]
+        numbers = [0, 1, 2, 3, 4, 5, 6]
     elif split == 'val':
         images, labels = read_file(test_image_file, test_label_file)
-        numbers = [0, 1, 2, 3, 4]
+        numbers = [0, 1, 2, 3, 4, 5, 6]
     else:
         train_images, train_labels = read_file(train_image_file, train_label_file)
         test_images, test_labels = read_file(test_image_file, test_label_file)
         images = np.concatenate([train_images, test_images])
         labels = np.concatenate([train_labels, test_labels])
-        numbers = [5, 6, 7, 8, 9]
+        numbers = [7, 8, 9]
     logger.info('Numbers used in {} split are {}'.format(split, ' '.join([str(x) for x in numbers])))
 
     label_dict = defaultdict(list)

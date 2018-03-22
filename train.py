@@ -9,6 +9,7 @@ from logging import handlers
 import torch
 import os
 import sys
+import configparser
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
@@ -22,6 +23,8 @@ from env import env
 from itertools import count
 from feature_net import mnist_cnn
 from time import gmtime, strftime
+import shutil
+
 
 if 1:
     FloatTensor = torch.cuda.FloatTensor
@@ -39,10 +42,11 @@ def pair_from_index(index):
 
     return env.Action(i, j)
 
+
 def shuffle_exp(exp):
     partition, action, next_partition = exp[:3]
     n_cluster = len(partition)
-    perm = range(n_cluster)
+    perm = list(range(n_cluster))
     random.shuffle(perm)
 
     perm_partition = [0]*n_cluster
@@ -152,7 +156,7 @@ def optimize():
     logger.info('non batch time: ', time.time() - start)
 
 
-@profile
+# @profile
 def optimize_batch():
     if len(memory) < start_mul * batch_size:
         return
@@ -276,70 +280,68 @@ def test(split, current_env):
 
     return avg_test
 
-def log_hparams():
-    logger.info('gamma: {}'.format(gamma))
-    logger.info('eps_start: {}'.format(eps_start))
-    logger.info('eps_end: {}'.format(eps_end))
-    logger.info('eps_decay: {}'.format(eps_decay))
-    logger.info('batch_size: {}'.format(batch_size))
-    logger.info('start_mul: {}'.format(start_mul))
-    logger.info('train_seed_size: {}'.format(train_seed_size))
-    logger.info('test_episodes: {}'.format(test_episodes))
-    logger.info('epoch_episode_train: {}'.format(epoch_episode_train))
-    logger.info('n_episodes: {}'.format(n_episodes))
-    logger.info('learning_rate: {}'.format(learning_rate))
-    logger.info('sampling_size: {}'.format(sampling_size))
-    logger.info('t_stop: {}'.format(t_stop))
-    logger.info('memory_size: {}'.format(memory_size))
 
-
-# model configuration
-gamma = 1
-eps_start = 0.95
-eps_end = 0.05
-eps_decay = 50000
-batch_size = 100
-start_mul = 20
-
-# number of different training subset
-train_seed_size = 10000
-test_episodes = 100
-epoch_episode_train = 200
-n_episodes = 30000
-
-DOUBLE_Q = False
-update_ref = 1
-update_factor = 0.1
-learning_rate = 1e-6
-
-sampling_size = 10
-t_stop = 4
-memory_size = 50000
+# def log_hparams():
+#     logger.info('gamma: {}'.format(gamma))
+#     logger.info('eps_start: {}'.format(eps_start))
+#     logger.info('eps_end: {}'.format(eps_end))
+#     logger.info('eps_decay: {}'.format(eps_decay))
+#     logger.info('batch_size: {}'.format(batch_size))
+#     logger.info('start_mul: {}'.format(start_mul))
+#     logger.info('train_seed_size: {}'.format(train_seed_size))
+#     logger.info('test_episodes: {}'.format(test_episodes))
+#     logger.info('epoch_episode_train: {}'.format(epoch_episode_train))
+#     logger.info('n_episodes: {}'.format(n_episodes))
+#     logger.info('learning_rate: {}'.format(learning_rate))
+#     logger.info('sampling_size: {}'.format(sampling_size))
+#     logger.info('t_stop: {}'.format(t_stop))
+#     logger.info('memory_size: {}'.format(memory_size))
 
 
 # path configuration
 data_dir = 'dataset'
 if not os.path.exists('results'):
     os.mkdir('results')
-
-
 log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-log_file = 'results/{}.log'.format(log_time)
+# save all the config file, log file and model weights in this folder
+output_dir = 'results/{}'.format(log_time)
+if not os.path.exists(output_dir):
+    os.mkdir(output_dir)
+else:
+    raise IOError('Output folder exists')
+log_file = os.path.join(output_dir, 'output.log')
+config_file = 'rl.config'
+
+# read configs
+config = configparser.RawConfigParser()
+config.read(config_file)
+shutil.copyfile(config_file, os.path.join(output_dir, config_file))
+gamma = config.getfloat('rl', 'gamma')
+eps_start = config.getfloat('rl', 'eps_start')
+eps_end = config.getfloat('rl', 'eps_end')
+eps_decay = config.getfloat('rl', 'eps_decay')
+batch_size = config.getint('rl', 'batch_size')
+start_mul = config.getfloat('rl', 'start_mul')
+train_seed_size = config.getint('rl', 'train_seed_size')
+test_episodes = config.getint('rl', 'test_episodes')
+epoch_episode_train = config.getint('rl', 'epoch_episode_train')
+n_episodes = config.getint('rl', 'n_episodes')
+DOUBLE_Q = config.getboolean('rl', 'DOUBLE_Q')
+update_ref = config.getfloat('rl', 'update_ref')
+update_factor = config.getfloat('rl', 'update_factor')
+learning_rate = config.getfloat('rl', 'learning_rate')
+sampling_size = config.getint('rl', 'sampling_size')
+t_stop = config.getint('rl', 't_stop')
+memory_size = config.getint('rl', 'memory_size')
 
 
 logger = logging.getLogger('')
-logger.setLevel(logging.INFO)
-formatter = logging.Formatter("%(asctime)s, %(levelname)s: %(message)s")
+stdout_handler = logging.StreamHandler(sys.stdout)
+file_handler = handlers.RotatingFileHandler(log_file, mode='w')
+logging.basicConfig(level=logging.INFO, handlers=[file_handler, stdout_handler],
+                    format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
 
-ch = logging.StreamHandler(sys.stdout)
-ch.setFormatter(formatter)
-logger.addHandler(ch)
 
-fh = handlers.RotatingFileHandler(log_file, mode='w')
-fh.setFormatter(formatter)
-logger.addHandler(fh)
-
-log_hparams()
 first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
 logger.info('first optimized in episode {}'.format(first_opt))
 train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
