@@ -21,6 +21,7 @@ from Agent import SET_DQN
 from env import env
 from itertools import count
 from feature_net import mnist_cnn
+from time import gmtime, strftime
 
 if 1:
     FloatTensor = torch.cuda.FloatTensor
@@ -229,7 +230,7 @@ def run_episode(seed, phase, current_env, print_partition=False):
 def test(split, current_env):
     random.seed(0)
     if split == 'train':
-        test_seeds = range(train_seed_size)
+        test_seeds = range(test_episodes)
     else:
         test_seeds = [random.random()+train_seed_size for _ in range(test_episodes)]
 
@@ -245,6 +246,22 @@ def test(split, current_env):
 
     return avg_test
 
+def log_hparams():
+    logger.info('gamma: {}'.format(gamma))
+    logger.info('eps_start: {}'.format(eps_start))
+    logger.info('eps_end: {}'.format(eps_end))
+    logger.info('eps_decay: {}'.format(eps_decay))
+    logger.info('batch_size: {}'.format(batch_size))
+    logger.info('start_mul: {}'.format(start_mul))
+    logger.info('train_seed_size: {}'.format(train_seed_size))
+    logger.info('test_episodes: {}'.format(test_episodes))
+    logger.info('epoch_episode_train: {}'.format(epoch_episode_train))
+    logger.info('n_episodes: {}'.format(n_episodes))
+    logger.info('learning_rate: {}'.format(learning_rate))
+    logger.info('sampling_size: {}'.format(sampling_size))
+    logger.info('t_stop: {}'.format(t_stop))
+    logger.info('memory_size: {}'.format(memory_size))
+
 
 # model configuration
 gamma = 1
@@ -255,10 +272,10 @@ batch_size = 100
 start_mul = 20
 
 # number of different training subset
-train_seed_size = 100
+train_seed_size = 10000
 test_episodes = 100
 epoch_episode_train = 200
-n_episodes = 1000
+n_episodes = 30000
 
 DOUBLE_Q = False
 update_ref = 1
@@ -274,7 +291,10 @@ memory_size = 50000
 data_dir = 'dataset'
 if not os.path.exists('results'):
     os.mkdir('results')
-log_file = 'results/S_{}_step_{}.log'.format(sampling_size, t_stop+1)
+
+
+log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+log_file = 'results/{}.log'.format(log_time)
 
 
 logger = logging.getLogger('')
@@ -289,7 +309,7 @@ fh = handlers.RotatingFileHandler(log_file, mode='w')
 fh.setFormatter(formatter)
 logger.addHandler(fh)
 
-
+log_hparams()
 first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
 logger.info('first optimized in episode {}'.format(first_opt))
 train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
