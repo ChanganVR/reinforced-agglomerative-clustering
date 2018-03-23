@@ -5,7 +5,7 @@ def ravg(seq, window):
     return [sum(seq[x-window+1:x+1])/window if x >= window-1 else sum(seq[:x+1])/(x+1) for x in range(len(seq))]
 
 
-def plot_log(log_name, grid, window=1):
+def plot_log(log_name, window=1):
 
     all_idx_episode = []
     all_train_purity = []
@@ -27,12 +27,10 @@ def plot_log(log_name, grid, window=1):
     plt.plot(all_idx_episode, ravg(all_val_purity, window), color='blue')
     plt.plot(all_idx_episode, ravg(all_test_purity, window), color='green')
 
-shared_ax = None
-# log_names = ['2018-03-22 23:49:27']
-log_names = ['2018-03-23 04:47:35']
-grids = [[1,1,1]]
-for i in range(1):
-    plot_log(log_names[i], grids[i], window=1)
+log_names = ['2018-03-22 23:49:27','2018-03-23 04:47:35','2018-03-23 20:41:07']
+# log_names = ['2018-03-23 04:47:35']
+for i in [1,2]:
+    plot_log(log_names[i], window=5)
 
 plt.draw()
 plt.show()
