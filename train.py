@@ -281,23 +281,6 @@ def test(split, current_env):
     return avg_test
 
 
-# def log_hparams():
-#     logger.info('gamma: {}'.format(gamma))
-#     logger.info('eps_start: {}'.format(eps_start))
-#     logger.info('eps_end: {}'.format(eps_end))
-#     logger.info('eps_decay: {}'.format(eps_decay))
-#     logger.info('batch_size: {}'.format(batch_size))
-#     logger.info('start_mul: {}'.format(start_mul))
-#     logger.info('train_seed_size: {}'.format(train_seed_size))
-#     logger.info('test_episodes: {}'.format(test_episodes))
-#     logger.info('epoch_episode_train: {}'.format(epoch_episode_train))
-#     logger.info('n_episodes: {}'.format(n_episodes))
-#     logger.info('learning_rate: {}'.format(learning_rate))
-#     logger.info('sampling_size: {}'.format(sampling_size))
-#     logger.info('t_stop: {}'.format(t_stop))
-#     logger.info('memory_size: {}'.format(memory_size))
-
-
 # path configuration
 data_dir = 'dataset'
 if not os.path.exists('results'):

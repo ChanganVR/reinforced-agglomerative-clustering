@@ -75,7 +75,15 @@ def prep_partition(partitions):
     select_i = []
     select_j = []
     action_siblings = []
-    batch_cluster_count = torch.LongTensor([len(p) for p in partitions])
+    batch_cluster_count = [len(p) for p in partitions]
+    c_row = torch.arange(n_partitions).type(LongTensor)
+    c_col = list(itertools.chain.from_iterable([[idx]*x for idx,x in enumerate(batch_cluster_count)]))
+    c_col = LongTensor(c_col)
+    c_i = torch.cat([c_row.view(1,-1), c_col.view(1,-1)], dim=0)
+    c_v = torch.ones(n_partitions).type(FloatTensor)
+    c_mat = torch.cuda.sparse.FloatTensor(c_i, c_v, torch.Size([n_partitions, batch_size]))
+
+    batch_cluster_count = torch.LongTensor(batch_cluster_count)
     batch_cluster_cumsum = torch.cat([torch.LongTensor([0]),torch.cumsum(batch_cluster_count, dim=0)])
     batch_action_count = torch.mul(batch_cluster_count,(batch_cluster_count-1))/2
     batch_action_cumsum = torch.cat([torch.LongTensor([0]),torch.cumsum(batch_action_count, dim=0)])
@@ -112,7 +120,8 @@ def prep_partition(partitions):
 
     a_mat = a_mat.type(FloatTensor)
 
-    train_aux = [select_i, select_j, action_siblings, p_mat, r_mat, a_mat]
+    # cr_mat = torch.reciprocal(batch_cluster_count.type(FloatTensor))
+    train_aux = [select_i, select_j, action_siblings, p_mat, r_mat, a_mat, c_mat]
     # batch_action_cumsum = torch.from_numpy(batch_action_cumsum[:-1]).type(LongTensor)
     batch_action_cumsum = batch_action_cumsum[:-1].type(LongTensor)
 

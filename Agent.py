@@ -294,6 +294,7 @@ class SET_DQN(nn.Module):
         h_action = 1024
         # dim_image = 784
         dim_image = 1024
+        h_state = 1024
 
         self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
@@ -306,34 +307,28 @@ class SET_DQN(nn.Module):
         self.fc_cluster1 = nn.Linear(dim_image, h_cluster)
         self.fc_cluster2 = nn.Linear(h_cluster, h_cluster)
 
-        self.fc_action1 = nn.Linear(2 * h_cluster, h_action)
+        self.fc_gate_state1 = nn.Linear(h_cluster, h_gate)
+        self.fc_gate_state2 = nn.Linear(h_gate, 1)
+        self.fc_state1 = nn.Linear(h_cluster, h_state)
+        self.fc_state2 = nn.Linear(h_state, h_state)
+
+        self.fc_action1 = nn.Linear(2 * h_cluster + h_state, h_action)
         self.fc_action2 = nn.Linear(h_action, 1)
 
     # @profile
     def forward(self, input):
-        # partitions in forms of [[e1, e2],[e3],...] of length n_partition
-        # partition_owner in forms of [o1, o1, ..., o2, ...] of length n_image
-        # siblings in forms of [[c11, c12, ...], [c21, c22, ...],...] of length batch_size
-        # sibling_owner in forms of [o1, o1, ..., o2, ...] of size batch_size
 
-        images, select_i, select_j, action_siblings, p_mat, r_mat, a_mat = input
+        images, select_i, select_j, action_siblings, p_mat, r_mat, a_mat, c_mat = input
         # images = Variable(images)
         # batch_size = len(action_siblings)
         # n_partition = len(partitions)
-
-        # tmp = []
-        # for x in range(n_partition):
-        #     tmp1 = partitions[x]
-        #     tmp1 = LongTensor(tmp1)
-        #     tmp2 = torch.mean(images[tmp1],dim=0).view(1,-1)
-        #     tmp.append(tmp2)
-        # all_means = torch.cat(tmp)
 
         # all_means = torch.cat([torch.mean(images[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)])
         # tile_means = torch.cat([all_means[x,...].view(1,-1) for x in image_partition_ids])
 
 
         p_mat = Variable(p_mat.to_dense())
+        c_mat = Variable(c_mat.to_dense())
         r_mat = Variable(r_mat.view(-1, 1))
         a_mat = Variable(a_mat)
 
@@ -347,8 +342,6 @@ class SET_DQN(nn.Module):
         all_means = torch.mul(all_means, r_mat)
         tile_means = torch.mm(p_mat, all_means)
         gate_input = torch.cat([images, tile_means], dim=1)
-        # assert(torch.equal(all_means.data, all_means2.data))
-        # assert(torch.equal(tile_means, tile_means2))
 
         gate_output_shared = F.relu(self.fc_gate1(gate_input))
         gate_output_shared = self.fc_gate2(gate_output_shared)
@@ -371,7 +364,19 @@ class SET_DQN(nn.Module):
         cluster_output = F.relu(self.fc_cluster1(cluster_input))
         cluster_output = self.fc_cluster2(cluster_output)
 
-        cluster_pairs = torch.cat([cluster_output[select_i, ...], cluster_output[select_j, ...]], dim=1)
+        state_gate = F.relu(self.fc_gate_state1(cluster_output))
+        state_gate = self.fc_gate_state2(state_gate)
+        state_gate_exp = torch.exp(state_gate)
+        state_gate_exp_sum = torch.mm(torch.t(c_mat), state_gate_exp)
+        state_gate_exp_sum = torch.mm(c_mat, state_gate_exp_sum)
+        state_gate = torch.div(state_gate_exp, state_gate_exp_sum)
+        state = torch.mul(cluster_output, state_gate)
+        state = torch.mm(torch.t(c_mat), state)
+        state = F.relu(self.fc_state1(state))
+        state = self.fc_state2(state)
+        state = torch.mm(a_mat, state)
+
+        cluster_pairs = torch.cat([state, cluster_output[select_i, ...], cluster_output[select_j, ...]], dim=1)
         q_table = F.relu(self.fc_action1(cluster_pairs))
         q_table = self.fc_action2(q_table)
 
@@ -382,9 +387,6 @@ class SET_DQN(nn.Module):
         q_tile_sum = torch.mm(a_mat, q_exp_sum)
         q_table = torch.div(q_exp, q_tile_sum)
         q_table_expand = torch.mul(torch.t(a_mat), q_table.view(1, -1))
-
-        # n_assert = torch.sum(a_mat[...,0]).data.type(LongTensor)
-        # assert(torch.equal(q_table1[0].data[n_assert,...], q_table2.data[n_assert,...]))
 
         return q_table, q_table_expand
 
