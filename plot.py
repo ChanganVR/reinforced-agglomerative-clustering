@@ -30,7 +30,7 @@ def plot_log(log_name, window=1):
 log_names = ['2018-03-22 23:49:27','2018-03-23 04:47:35','2018-03-23 20:41:07']
 # log_names = ['2018-03-23 04:47:35']
 for i in [1,2]:
-    plot_log(log_names[i], window=5)
+    plot_log(log_names[i], window=3)
 
 plt.draw()
 plt.show()
