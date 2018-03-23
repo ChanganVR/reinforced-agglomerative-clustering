@@ -4,7 +4,7 @@ import struct
 import numpy as np
 from collections import defaultdict
 import random
-from .tree import Tree
+from tree import Tree
 import logging
 
 logger = logging.getLogger()
@@ -116,13 +116,16 @@ class Env(object):
             steps = self.sampling_size - class_num
         all_assignments = list()
         all_assignments.append(init_assignments)
+        actions = list()
         for i in range(steps):
-            self.tree.step()
+            a, b = self.tree.step()
             assignments = self.tree.get_assignment()
+            action = Action(a, b)
+            actions.append(action)
             all_assignments.append(assignments)
 
         # return steps+1 assignments and sampled feature
-        return all_assignments, self.sampled_features
+        return all_assignments, actions, self.sampled_features
 
 
 def load_mnist(split, path):
@@ -166,3 +169,9 @@ def load_mnist(split, path):
 
     logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
     return label_dict, numbers
+
+
+if __name__ == '__main__':
+    env = Env('dataset', 10)
+    ret = env.correct_episode()
+    print(ret)

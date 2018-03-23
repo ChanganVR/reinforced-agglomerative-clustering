@@ -2,6 +2,8 @@ from __future__ import division
 from __future__ import print_function
 from collections import Counter
 import random
+from scipy.cluster.hierarchy import dendrogram
+import numpy as np
 
 
 class Node(object):
@@ -28,6 +30,8 @@ class Tree(object):
         self.counter = len(labels)
         self.last_assignment_dict = {}
         self.reward = reward
+        self.linkage = np.ndarray([self.leaf_num-self.class_num, 4])
+        self.steps = 0
 
     def is_done(self):
         return len(self.root.data) == self.class_num
@@ -39,7 +43,6 @@ class Tree(object):
         else:
             cluster_a = self.root.data[self.last_assignment_dict[a]]
             cluster_b = self.root.data[self.last_assignment_dict[b]]
-        # Todo: when to terminate the episode
         if self.is_done():
             raise ValueError("Episode is terminated")
 
@@ -84,7 +87,7 @@ class Tree(object):
             # successfully find two clusters containing one label
             if len(set(labels)) == 1:
                 self.merge(a, b)
-                break
+                return a, b
 
     def compute_reward(self, cluster_a, cluster_b, new_cluster):
         """
@@ -142,12 +145,12 @@ class Tree(object):
             else:
                 assignments.append(sorted(self.root.data[i].data))
 
-        # sort assignments
-        sorted_assignments = sorted(assignments, key=len, reverse=True)
+        # shuffle assignments since the representation should be permutation invariant
+        random.shuffle(assignments)
         self.last_assignment_dict = {}
         # last assignment dict stores the original indices of new cluster order
-        for i, cluster in enumerate(sorted_assignments):
+        for i, cluster in enumerate(assignments):
             self.last_assignment_dict[i] = assignments.index(cluster)
 
-        return sorted_assignments
+        return assignments
 
