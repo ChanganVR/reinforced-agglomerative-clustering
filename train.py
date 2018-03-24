@@ -105,8 +105,12 @@ def select_action(partition, images, phase):
     n_cluster = len(partition)
     n_action = n_cluster * (n_cluster - 1) / 2
 
+    if (phase == 'random'):
+        return LongTensor([random.randrange(n_action)])
+
     sample = random.random()
     eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
+
     if (phase == 'test') or sample > eps_thresh:
         # output, _, _ = model(input)
         # action = output[0].data.max(0)[1]
@@ -260,6 +264,22 @@ def run_episode(seed, phase, current_env, print_partition=False):
 
     return purity, max_cluster
 
+def get_random_performance():
+    n_test = 10000
+    test_seeds = [random.random() for _ in range(n_test)]
+    test_purity = [0] * n_test
+    max_clusters = []
+    for i_test, seed in enumerate(test_seeds):
+        test_purity[i_test], max_cluster = run_episode(seed=seed, phase='random', current_env=test_env)
+        max_clusters.append(max_cluster)
+
+    avg_test = sum(test_purity) / len(test_purity)
+    avg_cluster_max = sum(max_clusters) / len(max_clusters)
+    logger.info('random average max cluster size: {}'.format(avg_cluster_max))
+    logger.info('random test purity: {}'.format(avg_test))
+    raw_input('input to continue...')
+    return avg_test
+
 
 def test(split, current_env):
     random.seed(0)
@@ -336,6 +356,7 @@ model.cuda()
 optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
 memory = ReplayMemory(memory_size)
 
+# get_random_performance()
 for i_episode in range(n_episodes):
 
     seed = i_episode % train_seed_size

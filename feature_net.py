@@ -45,7 +45,7 @@ class mnist_vae(nn.Module):
         mu = self.fc_mu(x)
         log_sigma = self.fc_sigma(x)
         sigma = torch.exp(log_sigma)
-        r =
+
 if __name__ == '__main__':
     data_dir = 'dataset'
     train_images, train_labels = env.load_mnist(True, data_dir)
