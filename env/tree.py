@@ -2,7 +2,9 @@ from __future__ import division
 from __future__ import print_function
 from collections import Counter
 import random
-from scipy.cluster.hierarchy import dendrogram
+import copy
+from scipy.cluster import hierarchy
+import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -22,15 +24,17 @@ class Tree(object):
     def __init__(self, class_num, labels, reward):
         self.labels = labels
         self.leaf_num = len(self.labels)
-        # print('\t'.join([str(x) for x in labels]))
-        # print('\t'.join([str(x) for x in range(len(labels))]))
         leaf_nodes = [Node(i, None) for i in range(len(labels))]
         self.root = Node(-1, leaf_nodes)
         self.class_num = class_num
         self.counter = len(labels)
+        # map the indices in shuffled assignment to indices in self.data
         self.last_assignment_dict = {}
         self.reward = reward
-        self.linkage = np.ndarray([self.leaf_num-self.class_num, 4])
+        # 1st, 2nd column: indices of merged cluster in ith iteration,
+        # 3rd: distance, 4th: number of observation in the new cluster
+        self.linkage = np.ndarray([self.leaf_num-1, 4])
+        self.root_cluster_indices = list(range(self.leaf_num))
         self.steps = 0
 
     def is_done(self):
@@ -38,6 +42,7 @@ class Tree(object):
 
     def merge(self, a, b):
         # first check if a and b is valid
+        assert len(self.root_cluster_indices) == len(self.root.data)
         if a not in range(len(self.root.data)) or b not in range(len(self.root.data)):
             raise ValueError("Action does not exist")
         else:
@@ -65,7 +70,36 @@ class Tree(object):
         self.root.data.remove(cluster_b)
         self.root.data.append(new_cluster)
 
+        # store this merge operation in linkage
+        self.linkage[self.steps, 0] = self.root_cluster_indices[self.last_assignment_dict[a]]
+        self.linkage[self.steps, 1] = self.root_cluster_indices[self.last_assignment_dict[b]]
+        self.linkage[self.steps, 2] = len(data)
+        self.linkage[self.steps, 3] = len(data)
+        # update the indices of new cluster
+        self.root_cluster_indices = [x for i, x in enumerate(self.root_cluster_indices) if i not in
+                                     [self.last_assignment_dict[a], self.last_assignment_dict[b]]]
+        self.root_cluster_indices.append(self.leaf_num+self.steps)
+        self.steps += 1
+
         return reward
+
+    def draw_dendrogram(self):
+        # finish rest merging
+        for i in range(self.class_num-1):
+            self.linkage[self.steps, 0] = self.root_cluster_indices[0]
+            self.linkage[self.steps, 1] = self.root_cluster_indices[1]
+            self.linkage[self.steps, 2] = sum([len(x.data) for x in self.root.data[:i+2]])
+            self.linkage[self.steps, 3] = sum([len(x.data) for x in self.root.data[:i+2]])
+            # update the indices of new cluster
+            self.root_cluster_indices = [x for i, x in enumerate(self.root_cluster_indices) if i not in [0, 1]]
+            self.root_cluster_indices.append(self.leaf_num + self.steps + i)
+            self.steps += 1
+
+        print(self.linkage)
+        plt.figure()
+        hierarchy.set_link_color_palette(None)
+        hierarchy.dendrogram(self.linkage, labels=self.labels)
+        plt.show()
 
     def step(self):
         # do one-step correct merging
@@ -134,23 +168,24 @@ class Tree(object):
 
     def get_assignment(self):
         """
-        Return a list of assignment [[cluster 1 elements], [cluster 2 elements], ...]
-        the list is sorted according to the size of each cluster and each cluster is sorted wrt its element number
+        Return a random shuffled list of assignment [[cluster 1 elements], [cluster 2 elements], ...]
         """
+        # the indices in assignments are the indices in self.root.data
         assignments = []
         for i in range(len(self.root.data)):
             # each child in root.data is current cluster
             if self.root.data[i].data is None:
                 assignments.append([self.root.data[i].number])
             else:
-                assignments.append(sorted(self.root.data[i].data))
+                assignments.append(self.root.data[i].data)
 
         # shuffle assignments since the representation should be permutation invariant
-        random.shuffle(assignments)
+        shuffled_assignments = copy.deepcopy(assignments)
+        random.shuffle(shuffled_assignments)
         self.last_assignment_dict = {}
         # last assignment dict stores the original indices of new cluster order
-        for i, cluster in enumerate(assignments):
+        for i, cluster in enumerate(shuffled_assignments):
             self.last_assignment_dict[i] = assignments.index(cluster)
 
-        return assignments
+        return shuffled_assignments
 

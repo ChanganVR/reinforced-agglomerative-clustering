@@ -4,7 +4,7 @@ import struct
 import numpy as np
 from collections import defaultdict
 import random
-from tree import Tree
+from .tree import Tree
 import logging
 
 logger = logging.getLogger()
@@ -108,9 +108,9 @@ class Env(object):
         else:
             return reward, State(assignments), purity
 
-    def correct_episode(self, seed=None, steps=None):
+    def correct_episode(self, phase='train', seed=None, steps=None):
         # do steps number correct merge
-        init_assignments, _, class_num = self.reset(seed)
+        init_assignments, _, class_num = self.reset(phase=phase, seed=seed)
         if steps is None:
             # use the same class number as env is initialized
             steps = self.sampling_size - class_num
@@ -124,8 +124,15 @@ class Env(object):
             actions.append(action)
             all_assignments.append(assignments)
 
+        self.tree.draw_dendrogram()
+
         # return steps+1 assignments and sampled feature
         return all_assignments, actions, self.sampled_features
+
+    def draw_dendrogram(self):
+        if not self.tree.is_done():
+            raise ValueError('Merging is not done')
+        self.tree.draw_dendrogram()
 
 
 def load_mnist(split, path):
@@ -173,5 +180,4 @@ def load_mnist(split, path):
 
 if __name__ == '__main__':
     env = Env('dataset', 10)
-    ret = env.correct_episode()
-    print(ret)
+    ret = env.correct_episode(seed=0)
