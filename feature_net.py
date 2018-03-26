@@ -15,8 +15,8 @@ class mnist_cnn(nn.Module):
         super(mnist_cnn, self).__init__()
         self.conv1 = nn.Conv2d(1,32,kernel_size=5)
         self.conv2 = nn.Conv2d(32,64,kernel_size=5)
-        self.fc1 = nn.Linear(1024,784)
-        self.fc2 = nn.Linear(784,10)
+        self.fc1 = nn.Linear(1024,1024)
+        self.fc2 = nn.Linear(1024,10)
 
     def forward(self, input):
         # input = input.view(-1,1,28,28)
@@ -26,6 +26,25 @@ class mnist_cnn(nn.Module):
         x2 = self.fc2(x1)
 
         return x1, x2
+
+class mnist_vae(nn.Module):
+    def __init__(self):
+        super(mnist_vae, self).__init__()
+        self.conv1 = nn.Conv2d(1,32,kernel_size=5)
+        self.conv2 = nn.Conv2d(32,64,kernel_size=5)
+
+        self.dist = MultivariateNormal(torch.zeros(2), torch.eye(2))
+        self.fc_mu = nn.Linear(1024,128)
+        self.fc_sigma = nn.Linear(1024,128)
+        self.fc_decoder1 = nn.Linear(128,512)
+        self.fc_decoder2 = nn.Linear(512,784)
+
+    def forward(self, x):
+        x = F.max_pool2d(F.relu(self.conv1(input.view(-1,1,28,28))),2)
+        x = F.max_pool2d(F.relu(self.conv2(x)),2).view(-1,1024)
+        mu = self.fc_mu(x)
+        log_sigma = self.fc_sigma(x)
+        sigma = torch.exp(log_sigma)
 
 if __name__ == '__main__':
     data_dir = 'dataset'
