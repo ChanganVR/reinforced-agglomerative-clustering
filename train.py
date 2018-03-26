@@ -22,7 +22,7 @@ from Agent import SET_DQN
 from env import env
 from itertools import count
 from feature_net import mnist_cnn
-from time import gmtime, strftime
+from time import localtime, strftime
 import shutil
 
 
@@ -35,6 +35,12 @@ else:
     LongTensor = torch.LongTensor
     ByteTensor = torch.ByteTensor
 
+
+def index_from_pair(action):
+    i = max(action.a, action.b)
+    j = min(action.a, action.b)
+
+    return LongTensor([int(i*(i-1)/2+j)])
 
 def pair_from_index(index):
     i = int((2 * index + 0.25) ** 0.5 + 0.5)
@@ -224,6 +230,18 @@ def optimize_batch():
             param_ref.data = param_ref.data * (1 - update_factor) + param.data * update_factor
 
 
+def run_oracle_episode(seed):
+    all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop+1)
+    images = np.concatenate(images).reshape((sampling_size, -1))
+    images = torch.from_numpy(images).type(FloatTensor)
+    all_assignments[0] = all_assignments[0].cluster_assignments
+    all_assignments[-1] = None
+    for idx in range(t_stop):
+        reward = FloatTensor([0])
+        exp = [all_assignments[idx], index_from_pair(all_actions[idx]), all_assignments[idx+1], reward, images]
+        memory.push(exp)
+
+
 # @profile
 def run_episode(seed, phase, current_env, print_partition=False):
     partition, images, _ = current_env.reset(phase, seed=seed)
@@ -305,7 +323,7 @@ def test(split, current_env):
 data_dir = 'dataset'
 if not os.path.exists('results'):
     os.mkdir('results')
-log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+log_time = strftime("%Y-%m-%d %H:%M:%S", localtime())
 # save all the config file, log file and model weights in this folder
 output_dir = 'results/{}'.format(log_time)
 if not os.path.exists(output_dir):
@@ -320,6 +338,7 @@ config = configparser.RawConfigParser()
 config.read(config_file)
 shutil.copyfile(config_file, os.path.join(output_dir, config_file))
 gamma = config.getfloat('rl', 'gamma')
+correct_episode_rate = config.getfloat('rl','correct_episode_rate')
 eps_start = config.getfloat('rl', 'eps_start')
 eps_end = config.getfloat('rl', 'eps_end')
 eps_decay = config.getfloat('rl', 'eps_decay')
@@ -360,7 +379,10 @@ memory = ReplayMemory(memory_size)
 for i_episode in range(n_episodes):
 
     seed = i_episode % train_seed_size
-    run_episode(seed, phase='train', current_env=train_env)
+    if random.random() < correct_episode_rate:
+        run_oracle_episode(seed)
+    else:
+        run_episode(seed, phase='train', current_env=train_env)
 
     if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
         p_train = test(split='train', current_env=train_env)

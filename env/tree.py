@@ -146,7 +146,7 @@ class Tree(object):
                 assignments.append(sorted(self.root.data[i].data))
 
         # shuffle assignments since the representation should be permutation invariant
-        random.shuffle(assignments)
+        # random.shuffle(assignments)
         self.last_assignment_dict = {}
         # last assignment dict stores the original indices of new cluster order
         for i, cluster in enumerate(assignments):

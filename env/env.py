@@ -4,7 +4,7 @@ import struct
 import numpy as np
 from collections import defaultdict
 import random
-from tree import Tree
+from .tree import Tree
 import logging
 
 logger = logging.getLogger()
