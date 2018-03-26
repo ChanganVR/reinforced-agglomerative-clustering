@@ -240,6 +240,7 @@ def run_oracle_episode(seed):
         reward = FloatTensor([0])
         exp = [all_assignments[idx], index_from_pair(all_actions[idx]), all_assignments[idx+1], reward, images]
         memory.push(exp)
+        optimize_batch()
 
 
 # @profile
