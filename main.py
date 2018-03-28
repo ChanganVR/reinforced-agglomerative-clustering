@@ -22,10 +22,10 @@ from Agent import SET_DQN
 from env import env
 from itertools import count
 from feature_net import mnist_cnn
-from time import gmtime, strftime
+from time import localtime, strftime
 import shutil
 import argparse
-
+from vae_example import VAE
 
 if 1:
     FloatTensor = torch.cuda.FloatTensor
@@ -36,6 +36,12 @@ else:
     LongTensor = torch.LongTensor
     ByteTensor = torch.ByteTensor
 
+
+def index_from_pair(action):
+    i = max(action.a, action.b)
+    j = min(action.a, action.b)
+
+    return LongTensor([int(i*(i-1)/2+j)])
 
 def pair_from_index(index):
     i = int((2 * index + 0.25) ** 0.5 + 0.5)
@@ -229,12 +235,29 @@ def optimize_batch():
             param_ref.data = param_ref.data * (1 - update_factor) + param.data * update_factor
 
 
+def run_oracle_episode(seed):
+    all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop+1)
+    images = np.concatenate(images).reshape((sampling_size, -1))
+    images = torch.from_numpy(images).type(FloatTensor)
+    if feature_net is not None:
+        images = feature_net(Variable(images))[-1].data
+    all_assignments[0] = all_assignments[0].cluster_assignments
+    all_assignments[-1] = None
+    for idx in range(t_stop):
+        reward = FloatTensor([0])
+        exp = [all_assignments[idx], index_from_pair(all_actions[idx]), all_assignments[idx+1], reward, images]
+        memory.push(exp)
+        optimize_batch()
+
+
 # @profile
 def run_episode(seed, phase, current_env, print_partition=False):
     partition, images, _ = current_env.reset(phase, seed=seed)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
+    if feature_net is not None:
+        images = feature_net.extract_feature(Variable(images)).data
 
     # episode_reward = 0
     # reward_list = []
@@ -341,6 +364,7 @@ else:
 config = configparser.RawConfigParser()
 config.read(config_file)
 gamma = config.getfloat('rl', 'gamma')
+correct_episode_rate = config.getfloat('rl','correct_episode_rate')
 eps_start = config.getfloat('rl', 'eps_start')
 eps_end = config.getfloat('rl', 'eps_end')
 eps_decay = config.getfloat('rl', 'eps_decay')
@@ -358,7 +382,12 @@ sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
 
-model = SET_DQN()
+feature_net = None
+vae_model = VAE()
+vae_model.cuda()
+vae_model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_vae_model.pt'))
+feature_net = vae_model
+model = SET_DQN(external_feature=True)
 model.cuda()
 memory = ReplayMemory(memory_size)
 
@@ -391,7 +420,6 @@ if args.train:
                         format(i_episode, p_train, p_val, p_test))
             if p_test > best_test_purity:
                 torch.save(model.state_dict(), model_file)
-
 else:
     stdout_handler = logging.StreamHandler(sys.stdout)
     logging.basicConfig(level=logging.INFO, handlers=[stdout_handler],
