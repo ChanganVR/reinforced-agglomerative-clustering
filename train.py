@@ -24,6 +24,7 @@ from itertools import count
 from feature_net import mnist_cnn
 from time import localtime, strftime
 import shutil
+from vae_example import VAE
 
 
 if 1:
@@ -234,6 +235,8 @@ def run_oracle_episode(seed):
     all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop+1)
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
+    if feature_net is not None:
+        images = feature_net(Variable(images))[-1].data
     all_assignments[0] = all_assignments[0].cluster_assignments
     all_assignments[-1] = None
     for idx in range(t_stop):
@@ -249,6 +252,8 @@ def run_episode(seed, phase, current_env, print_partition=False):
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
+    if feature_net is not None:
+        images = feature_net.extract_feature(Variable(images)).data
 
     # episode_reward = 0
     # reward_list = []
@@ -371,7 +376,13 @@ train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='trai
 val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
 test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
 
-model = SET_DQN()
+feature_net = None
+vae_model = VAE()
+vae_model.cuda()
+vae_model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_vae_model.pt'))
+feature_net = vae_model
+
+model = SET_DQN(external_feature=True)
 model.cuda()
 optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
 memory = ReplayMemory(memory_size)
@@ -391,3 +402,5 @@ for i_episode in range(n_episodes):
         p_test = test(split='test', current_env=test_env)
         logger.info('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.
                     format(i_episode, p_train, p_val, p_test))
+
+        torch.save(model.state_dict(), os.path.join(output_dir, 'rl_model.pt'))

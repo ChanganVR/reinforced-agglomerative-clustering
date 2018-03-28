@@ -287,8 +287,9 @@ class CONV_DQRN(nn.Module):
 
 
 class SET_DQN(nn.Module):
-    def __init__(self):
+    def __init__(self, external_feature=False):
         super(SET_DQN, self).__init__()
+        self.external_feature = external_feature
         h_gate = 1024
         h_cluster = 1024
         h_action = 1024
@@ -296,8 +297,9 @@ class SET_DQN(nn.Module):
         dim_image = 1024
         h_state = 1024
 
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
+        if not self.external_feature:
+            self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
+            self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
 
         self.fc_gate1 = nn.Linear(2 * dim_image, h_gate)
         # self.fc_gate1 = nn.Linear(784*2,h_gate)
@@ -333,10 +335,11 @@ class SET_DQN(nn.Module):
         a_mat = Variable(a_mat)
 
         n_images = images.size(0)
-        images = images.view(-1, 1, 28, 28)
-        images = F.max_pool2d(F.relu(self.conv1(images)), 2)
-        images = F.max_pool2d(F.relu(self.conv2(images)), 2)
-        images = images.view(n_images, -1)
+        if not self.external_feature:
+            images = images.view(-1, 1, 28, 28)
+            images = F.max_pool2d(F.relu(self.conv1(images)), 2)
+            images = F.max_pool2d(F.relu(self.conv2(images)), 2)
+            images = images.view(n_images, -1)
 
         all_means = torch.mm(torch.t(p_mat), images)  # of size n_partitions*dim_feature
         all_means = torch.mul(all_means, r_mat)

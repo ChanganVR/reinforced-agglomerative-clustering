@@ -124,7 +124,7 @@ class Env(object):
             actions.append(action)
             all_assignments.append(assignments)
 
-        self.tree.draw_dendrogram()
+        # self.tree.draw_dendrogram()
 
         # return steps+1 assignments and sampled feature
         return all_assignments, actions, self.sampled_features
@@ -135,7 +135,7 @@ class Env(object):
         self.tree.draw_dendrogram()
 
 
-def load_mnist(split, path):
+def load_mnist(split, path, return_data=False):
     """
     Python function for importing the MNIST data set.  It returns a list tuple
     with the second element being the label and the first element
@@ -175,7 +175,10 @@ def load_mnist(split, path):
             label_dict[labels[i]].append(images[i])
 
     logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
-    return label_dict, numbers
+    if return_data:
+        return images
+    else:
+        return label_dict, numbers
 
 
 if __name__ == '__main__':
