@@ -24,6 +24,7 @@ from itertools import count
 from feature_net import mnist_cnn
 from time import gmtime, strftime
 import shutil
+import argparse
 
 
 if 1:
@@ -105,19 +106,23 @@ def select_action(partition, images, phase):
     n_cluster = len(partition)
     n_action = n_cluster * (n_cluster - 1) / 2
 
-    if (phase == 'random'):
+    if phase == 'random':
         return LongTensor([random.randrange(n_action)])
 
     sample = random.random()
-    eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
 
-    if (phase == 'test') or sample > eps_thresh:
+    if phase == 'test':
         # output, _, _ = model(input)
         # action = output[0].data.max(0)[1]
         output, _ = model(input)
         action = output.data.max(0)[1]
     else:
-        action = LongTensor([random.randrange(n_action)])
+        eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
+        if sample > eps_thresh:
+            output, _ = model(input)
+            action = output.data.max(0)[1]
+        else:
+            action = LongTensor([random.randrange(n_action)])
 
     return action
 
@@ -264,6 +269,7 @@ def run_episode(seed, phase, current_env, print_partition=False):
 
     return purity, max_cluster
 
+
 def get_random_performance():
     n_test = 10000
     test_seeds = [random.random() for _ in range(n_test)]
@@ -301,24 +307,39 @@ def test(split, current_env):
     return avg_test
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--train', action='store_true', default=False)
+parser.add_argument('--test', action='store_true', default=False)
+parser.add_argument('input_dir')
+args = parser.parse_args()
+if not args.train and not args.test:
+    raise ValueError('Train or test flag has to be specified')
+if not args.train and args.input_dir is None:
+    raise ValueError('Input dir should be specified during test')
+
 # path configuration
 data_dir = 'dataset'
-if not os.path.exists('results'):
-    os.mkdir('results')
-log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
-# save all the config file, log file and model weights in this folder
-output_dir = 'results/{}'.format(log_time)
-if not os.path.exists(output_dir):
-    os.mkdir(output_dir)
+if args.train:
+    if not os.path.exists('results'):
+        os.mkdir('results')
+    log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+    # save all the config file, log file and model weights in this folder
+    output_dir = 'results/{}'.format(log_time)
+    if not os.path.exists(output_dir):
+        os.mkdir(output_dir)
+    else:
+        raise IOError('Output folder exists')
+    log_file = os.path.join(output_dir, 'output.log')
+    config_file = 'rl.config'
+    shutil.copyfile(config_file, os.path.join(output_dir, config_file))
+    model_file = os.path.join(output_dir, 'model.pth')
 else:
-    raise IOError('Output folder exists')
-log_file = os.path.join(output_dir, 'output.log')
-config_file = 'rl.config'
+    config_file = os.path.join(args.input_dir, 'rl.config')
+    model_file = os.path.join(args.input_dir, 'model.pth')
 
 # read configs
 config = configparser.RawConfigParser()
 config.read(config_file)
-shutil.copyfile(config_file, os.path.join(output_dir, config_file))
 gamma = config.getfloat('rl', 'gamma')
 eps_start = config.getfloat('rl', 'eps_start')
 eps_end = config.getfloat('rl', 'eps_end')
@@ -337,34 +358,48 @@ sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
 
-
-logger = logging.getLogger('')
-stdout_handler = logging.StreamHandler(sys.stdout)
-file_handler = handlers.RotatingFileHandler(log_file, mode='w')
-logging.basicConfig(level=logging.INFO, handlers=[file_handler, stdout_handler],
-                    format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
-
-
-first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
-logger.info('first optimized in episode {}'.format(first_opt))
-train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
-val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
-test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
-
 model = SET_DQN()
 model.cuda()
-optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
 memory = ReplayMemory(memory_size)
 
-# get_random_performance()
-for i_episode in range(n_episodes):
+if args.train:
+    logger = logging.getLogger('')
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    file_handler = handlers.RotatingFileHandler(log_file, mode='w')
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stdout_handler],
+                        format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
 
-    seed = i_episode % train_seed_size
-    run_episode(seed, phase='train', current_env=train_env)
+    first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
+    train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
+    val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
+    test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
+    optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
+    logger.info('first optimized in episode {}'.format(first_opt))
 
-    if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
-        p_train = test(split='train', current_env=train_env)
-        p_val = test(split='val', current_env=val_env)
-        p_test = test(split='test', current_env=test_env)
-        logger.info('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.
-                    format(i_episode, p_train, p_val, p_test))
+    # get_random_performance()
+    best_test_purity = 0
+    for i_episode in range(n_episodes):
+
+        seed = i_episode % train_seed_size
+        run_episode(seed, phase='train', current_env=train_env)
+
+        if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
+            p_train = test(split='train', current_env=train_env)
+            p_val = test(split='val', current_env=val_env)
+            p_test = test(split='test', current_env=test_env)
+            logger.info('Episode {} train purity: {:.4f}, val purity: {:.4f}, test purity: {:.4f}'.
+                        format(i_episode, p_train, p_val, p_test))
+            if p_test > best_test_purity:
+                torch.save(model.state_dict(), model_file)
+
+else:
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    logging.basicConfig(level=logging.INFO, handlers=[stdout_handler],
+                        format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
+    if not os.path.exists(model_file):
+        raise ValueError('Weights file does not exist')
+    model.load_state_dict(torch.load(model_file))
+    first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
+    test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
+    run_episode(None, phase='test', current_env=test_env)
+    test_env.draw_dendrogram()

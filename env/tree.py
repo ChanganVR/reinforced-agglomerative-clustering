@@ -88,14 +88,13 @@ class Tree(object):
         for i in range(self.class_num-1):
             self.linkage[self.steps, 0] = self.root_cluster_indices[0]
             self.linkage[self.steps, 1] = self.root_cluster_indices[1]
-            self.linkage[self.steps, 2] = sum([len(x.data) for x in self.root.data[:i+2]])
-            self.linkage[self.steps, 3] = sum([len(x.data) for x in self.root.data[:i+2]])
+            self.linkage[self.steps, 2] = sum([len(x.data) if x.data is not None else 1 for x in self.root.data[:i+2]])
+            self.linkage[self.steps, 3] = sum([len(x.data) if x.data is not None else 1 for x in self.root.data[:i+2]])
             # update the indices of new cluster
             self.root_cluster_indices = [x for i, x in enumerate(self.root_cluster_indices) if i not in [0, 1]]
             self.root_cluster_indices.append(self.leaf_num + self.steps + i)
             self.steps += 1
 
-        print(self.linkage)
         plt.figure()
         hierarchy.set_link_color_palette(None)
         hierarchy.dendrogram(self.linkage, labels=self.labels)
