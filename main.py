@@ -342,7 +342,8 @@ data_dir = 'dataset'
 if args.train:
     if not os.path.exists('results'):
         os.mkdir('results')
-    log_time = strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    log_time = strftime("%Y-%m-%d %H:%M:%S", localtime())
+
     # save all the config file, log file and model weights in this folder
     output_dir = 'results/{}'.format(log_time)
     if not os.path.exists(output_dir):
