@@ -21,7 +21,6 @@ from Agent import CONV_DQRN
 from Agent import SET_DQN
 from env import env
 from itertools import count
-from feature_net import mnist_cnn
 from time import localtime, strftime
 import shutil
 import argparse
@@ -345,7 +344,7 @@ data_dir = 'dataset'
 if args.train:
     if not os.path.exists('results'):
         os.mkdir('results')
-    log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+    log_time = strftime("%Y-%m-%d %H:%M:%S", localtime())
     # save all the config file, log file and model weights in this folder
     output_dir = 'results/{}'.format(log_time)
     if not os.path.exists(output_dir):
