@@ -287,17 +287,26 @@ class CONV_DQRN(nn.Module):
 
 
 class SET_DQN(nn.Module):
-    def __init__(self, external_feature=False):
+    def __init__(self, external_feature=False, label_as_feature=False):
         super(SET_DQN, self).__init__()
         self.external_feature = external_feature
-        h_gate = 1024
-        h_cluster = 1024
-        h_action = 1024
-        # dim_image = 784
-        dim_image = 1024
-        h_state = 1024
+        self.label_as_feature = label_as_feature
+        if label_as_feature:
+            h_gate = 20
+            h_cluster = 20
+            h_action = 20
+            # dim_image = 784
+            dim_image = 10
+            h_state = 20
+        else:
+            h_gate = 1024
+            h_cluster = 1024
+            h_action = 1024
+            # dim_image = 784
+            dim_image = 1024
+            h_state = 1024
 
-        if not self.external_feature:
+        if not self.external_feature and not label_as_feature:
             self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
             self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
 
@@ -335,7 +344,9 @@ class SET_DQN(nn.Module):
         a_mat = Variable(a_mat)
 
         n_images = images.size(0)
-        if not self.external_feature:
+        if self.label_as_feature:
+            images = images.view(n_images, -1)
+        elif not self.external_feature:
             images = images.view(-1, 1, 28, 28)
             images = F.max_pool2d(F.relu(self.conv1(images)), 2)
             images = F.max_pool2d(F.relu(self.conv2(images)), 2)

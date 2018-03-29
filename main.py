@@ -21,11 +21,11 @@ from Agent import CONV_DQRN
 from Agent import SET_DQN
 from env import env
 from itertools import count
-from feature_net import mnist_cnn
 from time import localtime, strftime
 import shutil
 import argparse
-from vae_example import VAE
+# from vae_example import VAE
+
 
 if 1:
     FloatTensor = torch.cuda.FloatTensor
@@ -42,6 +42,7 @@ def index_from_pair(action):
     j = min(action.a, action.b)
 
     return LongTensor([int(i*(i-1)/2+j)])
+
 
 def pair_from_index(index):
     i = int((2 * index + 0.25) ** 0.5 + 0.5)
@@ -239,8 +240,6 @@ def run_oracle_episode(seed):
     all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop+1)
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
-    if feature_net is not None:
-        images = feature_net(Variable(images))[-1].data
     all_assignments[0] = all_assignments[0].cluster_assignments
     all_assignments[-1] = None
     for idx in range(t_stop):
@@ -252,12 +251,10 @@ def run_oracle_episode(seed):
 
 # @profile
 def run_episode(seed, phase, current_env, print_partition=False):
-    partition, images, _ = current_env.reset(phase, seed=seed)
+    partition, images, _ = current_env.reset(phase, seed=seed, label_as_feature=True)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
-    if feature_net is not None:
-        images = feature_net.extract_feature(Variable(images)).data
 
     # episode_reward = 0
     # reward_list = []
@@ -333,7 +330,7 @@ def test(split, current_env):
 parser = argparse.ArgumentParser()
 parser.add_argument('--train', action='store_true', default=False)
 parser.add_argument('--test', action='store_true', default=False)
-parser.add_argument('input_dir')
+parser.add_argument('--input_dir')
 args = parser.parse_args()
 if not args.train and not args.test:
     raise ValueError('Train or test flag has to be specified')
@@ -345,7 +342,7 @@ data_dir = 'dataset'
 if args.train:
     if not os.path.exists('results'):
         os.mkdir('results')
-    log_time = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+    log_time = strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
     # save all the config file, log file and model weights in this folder
     output_dir = 'results/{}'.format(log_time)
     if not os.path.exists(output_dir):
@@ -381,13 +378,15 @@ learning_rate = config.getfloat('rl', 'learning_rate')
 sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
+label_as_feature = True
 
-feature_net = None
-vae_model = VAE()
-vae_model.cuda()
-vae_model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_vae_model.pt'))
-feature_net = vae_model
-model = SET_DQN(external_feature=True)
+# feature_net = None
+# vae_model = VAE()
+# vae_model.cuda()
+# vae_model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_vae_model.pt'))
+# feature_net = vae_model
+# model = SET_DQN(external_feature=True)
+model = SET_DQN(label_as_feature=label_as_feature)
 model.cuda()
 memory = ReplayMemory(memory_size)
 

@@ -54,7 +54,7 @@ class Env(object):
         self.tree = None
         self.reward = reward
 
-    def reset(self, phase, seed=None):
+    def reset(self, phase, seed=None, label_as_feature=False):
         """
         Define state as the combination of cluster assignments and sampled_features
         :return:
@@ -88,7 +88,12 @@ class Env(object):
         self.tree = Tree(class_num, sampled_labels, self.reward)
         assignments = self.tree.get_assignment()
         # purity = self.tree.current_purity()
-        return State(assignments), self.sampled_features, class_num
+        if label_as_feature:
+            features = np.zeros((self.sampling_size, 10))
+            features[np.arange(self.sampling_size), self.sampled_labels] = 1
+        else:
+            features = self.sampled_features
+        return State(assignments), features, class_num
 
     def step(self, action):
         """
