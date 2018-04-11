@@ -86,9 +86,9 @@ class Mnist(Dataset):
 
 
 def train(model, data_loaders, dataset_sizes, criterion, optimizer, num_epochs, clustering_algorithm, test_sample):
-    train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=False)
+    # train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=False)
     test_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='test', raw_pixel=False)
-    print('Average purity scores in train and test are: {:4f}, {:4f}'.format(train_purity, test_purity))
+    print('Average purity scores in train and test are: {:4f}, {:4f}'.format(0, test_purity))
     for i in range(num_epochs):
         model.train(True)
         running_loss = 0
@@ -111,9 +111,9 @@ def train(model, data_loaders, dataset_sizes, criterion, optimizer, num_epochs, 
         acc = running_corrects / dataset_sizes['train']
         print('In epoch {}, loss is {:.2f}, accuracy is {:.4f}'.format(i, loss, acc))
 
-        train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=False)
+        # train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=False)
         test_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='test', raw_pixel=False)
-        print('Average purity scores in train and test are: {:4f}, {:4f}'.format(train_purity, test_purity))
+        print('Average purity scores in train and test are: {:4f}, {:4f}'.format(0, test_purity))
 
 
 def test(model, data_loaders, clustering_algorithm, test_sample, split, raw_pixel=False):
@@ -134,7 +134,8 @@ def test(model, data_loaders, clustering_algorithm, test_sample, split, raw_pixe
             if raw_pixel:
                 feature_list.append(np.reshape(images.numpy(), (images.shape[0], -1)))
             else:
-                feature_list.append(model(Variable(images.cuda())).data.cpu().numpy())
+                # feature_list.append(model(Variable(images.cuda())).data.cpu().numpy())
+                feature_list.append(np.random.rand(1, 10))
         test_labels = np.concatenate(label_list)
         test_features = np.concatenate(feature_list)
 
@@ -186,9 +187,9 @@ def main():
     criterion = nn.CrossEntropyLoss().cuda()
     optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
-    train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=True)
-    test_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='test', raw_pixel=True)
-    print('Average purity scores in train and test using raw pixels are: {:4f}, {:4f}'.format(train_purity, test_purity))
+    # train_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='train', raw_pixel=True)
+    # test_purity = test(model, data_loaders, clustering_algorithm, test_sample, split='test', raw_pixel=True)
+    # print('Average purity scores in train and test using raw pixels are: {:4f}, {:4f}'.format(train_purity, test_purity))
     train(model, data_loaders, dataset_sizes, criterion, optimizer, num_epochs, clustering_algorithm, test_sample)
 
 
