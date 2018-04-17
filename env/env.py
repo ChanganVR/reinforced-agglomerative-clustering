@@ -39,14 +39,16 @@ class State(object):
 class Env(object):
     def __init__(self, data_dir, sampling_size, dataset='mnist', split='train', reward='local_purity'):
         if dataset == 'mnist':
-            label_dict, digit_classes = load_mnist(split, data_dir)
+            label_dict, classes = load_mnist(split, data_dir)
+        elif dataset == 'cifar':
+            label_dict, classes = load_cifar(split, data_dir)
         else:
             raise NotImplementedError
         assert split in ['train', 'val', 'test'], 'split does not exist'
         assert reward in ['local_purity', 'global_purity', 'uniform']
 
         self.label_dict = label_dict
-        self.digit_classes = digit_classes
+        self.classes = classes
         self.sampling_size = sampling_size
         self.split = split
         self.sampled_features = []
@@ -66,7 +68,7 @@ class Env(object):
             class_num = 3
         else:
             class_num = 3
-        sampled_class = random.sample(self.digit_classes, class_num)
+        sampled_class = random.sample(self.classes, class_num)
         sampled_features = []
         sampled_labels = []
         for key in sampled_class:
@@ -186,6 +188,51 @@ def load_mnist(split, path, return_data=False):
         return label_dict, numbers
 
 
+def load_cifar(split, data_dir):
+    def unpickle(file):
+        import pickle
+        with open(file, 'rb') as fo:
+            dict = pickle.load(fo, encoding='bytes')
+        return dict[b'data'], np.asarray(dict[b'labels'])
+    if split == 'train':
+        image_list = []
+        labels_list = []
+        for i in range(1, 6):
+            file_path = os.path.join(data_dir, 'cifar-10-batches-py', 'data_batch_'+str(i))
+            images, labels = unpickle(file_path)
+            image_list.append(images)
+            labels_list.append(labels)
+        images = np.concatenate(image_list)
+        labels = np.concatenate(labels_list)
+        classes = [0, 1, 2, 3, 4, 5, 6]
+    elif split == 'val':
+        file_path = os.path.join(data_dir, 'cifar-10-batches-py', 'test_batch')
+        images, labels = unpickle(file_path)
+        classes = [0, 1, 2, 3, 4, 5, 6]
+    else:
+        image_list = []
+        labels_list = []
+        for file in ['data_batch_1', 'data_batch_2', 'data_batch_3', 'data_batch_4', 'data_batch_5', 'test_batch']:
+            file_path = os.path.join(data_dir, 'cifar-10-batches-py', file)
+            images, labels = unpickle(file_path)
+            image_list.append(images)
+            labels_list.append(labels)
+        images = np.concatenate(image_list)
+        labels = np.concatenate(labels_list)
+        classes = [7, 8, 9]
+
+    indices = np.isin(labels, classes)
+    images = images[indices]
+    # images = np.reshape(images, (-1, 3, 32, 32))
+    labels = labels[indices]
+    label_dict = defaultdict(list)
+    for i in range(labels.shape[0]):
+        label_dict[labels[i]].append(images[i])
+
+    logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
+    return label_dict, classes
+
+
 if __name__ == '__main__':
-    env = Env('dataset', 10)
+    env = Env('dataset', 10, dataset='cifar')
     ret = env.correct_episode(seed=0)

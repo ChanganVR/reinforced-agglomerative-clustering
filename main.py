@@ -379,6 +379,7 @@ learning_rate = config.getfloat('rl', 'learning_rate')
 sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
+dataset = config.get('rl', 'dataset')
 label_as_feature = True
 
 # feature_net = None
@@ -387,7 +388,7 @@ label_as_feature = True
 # vae_model.load_state_dict(torch.load('/local-scratch/chenleic/cluster_models/mnist_vae_model.pt'))
 # feature_net = vae_model
 # model = SET_DQN(external_feature=True)
-model = SET_DQN(label_as_feature=label_as_feature)
+model = SET_DQN(label_as_feature=label_as_feature, dataset=dataset)
 model.cuda()
 memory = ReplayMemory(memory_size)
 
@@ -399,9 +400,9 @@ if args.train:
                         format='%(asctime)s, %(levelname)s: %(message)s', datefmt="%Y-%m-%d %H:%M:%S")
 
     first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
-    train_env = env.Env(data_dir, sampling_size, reward='global_purity', split='train')
-    val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
-    test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
+    train_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='train')
+    val_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='val')
+    test_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='test')
     optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
     logger.info('first optimized in episode {}'.format(first_opt))
 
@@ -428,6 +429,6 @@ else:
         raise ValueError('Weights file does not exist')
     model.load_state_dict(torch.load(model_file))
     first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
-    test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
+    test_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='test')
     run_episode(None, phase='test', current_env=test_env)
     test_env.draw_dendrogram()

@@ -287,10 +287,11 @@ class CONV_DQRN(nn.Module):
 
 
 class SET_DQN(nn.Module):
-    def __init__(self, external_feature=False, label_as_feature=False):
+    def __init__(self, external_feature=False, label_as_feature=False, dataset='mnist'):
         super(SET_DQN, self).__init__()
         self.external_feature = external_feature
         self.label_as_feature = label_as_feature
+        self.dataset = dataset
         if label_as_feature:
             h_gate = 20
             h_cluster = 20
@@ -307,7 +308,10 @@ class SET_DQN(nn.Module):
             h_state = 1024
 
         if not self.external_feature and not label_as_feature:
-            self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
+            if self.dataset == 'mnist':
+                self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
+            elif self.dataset == 'cifar':
+                self.conv1 = nn.Conv2d(3, 32, kernel_size=5)
             self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
 
         self.fc_gate1 = nn.Linear(2 * dim_image, h_gate)
@@ -347,7 +351,10 @@ class SET_DQN(nn.Module):
         if self.label_as_feature:
             images = images.view(n_images, -1)
         elif not self.external_feature:
-            images = images.view(-1, 1, 28, 28)
+            if self.dataset == 'mnist':
+                images = images.view(-1, 1, 28, 28)
+            elif self.dataset == 'cifar':
+                images = images.view(-1, 3, 32, 32)
             images = F.max_pool2d(F.relu(self.conv1(images)), 2)
             images = F.max_pool2d(F.relu(self.conv2(images)), 2)
             images = images.view(n_images, -1)
