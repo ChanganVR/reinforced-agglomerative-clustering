@@ -188,7 +188,7 @@ def load_mnist(split, path, return_data=False):
         return label_dict, numbers
 
 
-def load_cifar(split, data_dir):
+def load_cifar(split, data_dir, return_data=False):
     def unpickle(file):
         import pickle
         with open(file, 'rb') as fo:
@@ -230,7 +230,10 @@ def load_cifar(split, data_dir):
         label_dict[labels[i]].append(images[i])
 
     logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
-    return label_dict, classes
+    if return_data:
+        return images, labels
+    else:
+        return label_dict, classes
 
 
 if __name__ == '__main__':

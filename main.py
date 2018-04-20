@@ -448,15 +448,12 @@ learning_rate = config.getfloat('rl', 'learning_rate')
 sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
-<<<<<<< HEAD
-dataset = config.get('rl', 'dataset')
-label_as_feature = True
-=======
 test_memory_size = config.getint('rl', 'test_memory_size')
+dataset = config.get('rl', 'dataset')
+
 label_as_feature = False
 with_adaptation = False
 with_terimal_state = True
->>>>>>> lei-dev
 
 # feature_net = None
 # vae_model = VAE()
@@ -517,11 +514,7 @@ else:
         raise ValueError('Weights file does not exist')
     model.load_state_dict(torch.load(model_file))
     first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
-<<<<<<< HEAD
-    test_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='test')
-    run_episode(None, phase='test', current_env=test_env)
-    test_env.draw_dendrogram()
-=======
+
     val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
     test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
     purity_list = []
@@ -533,4 +526,3 @@ else:
         print(i, purity, sum(purity_list)/len(purity_list))
         # test_env.draw_dendrogram()
         # input()
->>>>>>> lei-dev

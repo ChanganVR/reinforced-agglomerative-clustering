@@ -323,14 +323,8 @@ class SET_DQN(nn.Module):
             h_state = 1024
 
         if not self.external_feature and not label_as_feature:
-<<<<<<< HEAD
-            if self.dataset == 'mnist':
-                self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
-            elif self.dataset == 'cifar':
-                self.conv1 = nn.Conv2d(3, 32, kernel_size=5)
-            self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
-=======
-            feature_model = [nn.Conv2d(1, 32, kernel_size=5),
+
+            feature_model = [nn.Conv2d(input_c, 32, kernel_size=5),
                              # nn.InstanceNorm2d(32),
                              nn.ReLU(inplace=True),
                              nn.MaxPool2d(2),
@@ -342,7 +336,6 @@ class SET_DQN(nn.Module):
             # for _ in range(3):
             #     feature_model += [res_block(64)]
             self.feature_model = nn.Sequential(*feature_model)
->>>>>>> lei-dev
 
         self.fc_gate1 = nn.Linear(2 * dim_image, h_gate)
         # self.fc_gate1 = nn.Linear(784*2,h_gate)
@@ -388,19 +381,14 @@ class SET_DQN(nn.Module):
         if self.label_as_feature:
             images = images.view(n_images, -1)
         elif not self.external_feature:
-<<<<<<< HEAD
             if self.dataset == 'mnist':
                 images = images.view(-1, 1, 28, 28)
             elif self.dataset == 'cifar':
                 images = images.view(-1, 3, 32, 32)
-            images = F.max_pool2d(F.relu(self.conv1(images)), 2)
-            images = F.max_pool2d(F.relu(self.conv2(images)), 2)
-=======
-            images = images.view(-1, 1, 28, 28)
+
             # images = F.max_pool2d(F.relu(self.conv1(images)), 2)
             # images = F.max_pool2d(F.relu(self.conv2(images)), 2)
             images = self.feature_model(images)
->>>>>>> lei-dev
             images = images.view(n_images, -1)
 
         all_means = torch.mm(torch.t(p_mat), images)  # of size n_partitions*dim_feature
