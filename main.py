@@ -463,7 +463,7 @@ with_terimal_state = True
 # model = SET_DQN(external_feature=True)
 model = SET_DQN(label_as_feature=label_as_feature, dataset=dataset)
 model.cuda()
-model_ref = SET_DQN(label_as_feature=label_as_feature)
+model_ref = SET_DQN(label_as_feature=label_as_feature, dataset=dataset)
 model_ref.cuda()
 if args.finetune is not None:
     model.load_state_dict(torch.load(os.path.join('./results', args.finetune, 'model.pth')))

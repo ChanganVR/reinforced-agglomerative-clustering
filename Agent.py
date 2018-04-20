@@ -319,11 +319,11 @@ class SET_DQN(nn.Module):
             h_cluster = 1024
             h_action = 1024
             # dim_image = 784
-            dim_image = 1024
+            dim_image = 1024 if self.dataset == 'mnist' else 1600
             h_state = 1024
 
         if not self.external_feature and not label_as_feature:
-
+            input_c = 1 if self.dataset == 'mnist' else 3
             feature_model = [nn.Conv2d(input_c, 32, kernel_size=5),
                              # nn.InstanceNorm2d(32),
                              nn.ReLU(inplace=True),
@@ -389,6 +389,7 @@ class SET_DQN(nn.Module):
             # images = F.max_pool2d(F.relu(self.conv1(images)), 2)
             # images = F.max_pool2d(F.relu(self.conv2(images)), 2)
             images = self.feature_model(images)
+            # print(images.size())
             images = images.view(n_images, -1)
 
         all_means = torch.mm(torch.t(p_mat), images)  # of size n_partitions*dim_feature
