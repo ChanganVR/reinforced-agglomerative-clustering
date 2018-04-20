@@ -285,6 +285,21 @@ class CONV_DQRN(nn.Module):
 
         return q_table
 
+class res_block(nn.Module):
+    def __init__(self, n_channel):
+        super(res_block, self).__init__()
+        block = [nn.ReflectionPad2d(1),
+                 nn.Conv2d(n_channel, n_channel, 3),
+                 nn.InstanceNorm2d(n_channel),
+                 nn.ReLU(inplace=True),
+                 nn.ReflectionPad2d(1),
+                 nn.Conv2d(n_channel, n_channel, 3),
+                 nn.InstanceNorm2d(n_channel)]
+
+        self.block = nn.Sequential(*block)
+
+    def forward(self, x):
+        return x + self.block(x)
 
 class SET_DQN(nn.Module):
     def __init__(self, external_feature=False, label_as_feature=False):
@@ -307,8 +322,18 @@ class SET_DQN(nn.Module):
             h_state = 1024
 
         if not self.external_feature and not label_as_feature:
-            self.conv1 = nn.Conv2d(1, 32, kernel_size=5)
-            self.conv2 = nn.Conv2d(32, 64, kernel_size=5)
+            feature_model = [nn.Conv2d(1, 32, kernel_size=5),
+                             # nn.InstanceNorm2d(32),
+                             nn.ReLU(inplace=True),
+                             nn.MaxPool2d(2),
+                             nn.Conv2d(32, 64, kernel_size=5),
+                             # nn.InstanceNorm2d(64),
+                             nn.ReLU(inplace=True),
+                             nn.MaxPool2d(2)]
+
+            # for _ in range(3):
+            #     feature_model += [res_block(64)]
+            self.feature_model = nn.Sequential(*feature_model)
 
         self.fc_gate1 = nn.Linear(2 * dim_image, h_gate)
         # self.fc_gate1 = nn.Linear(784*2,h_gate)
@@ -323,8 +348,16 @@ class SET_DQN(nn.Module):
         self.fc_state1 = nn.Linear(h_cluster, h_state)
         self.fc_state2 = nn.Linear(h_state, h_state)
 
+        # self.res_cluster = nn.Sequential([res_block(64) for _ in range(3)])
+        # self.res_state = nn.Sequential([res_block(64) for _ in range(3)])
+
         self.fc_action1 = nn.Linear(2 * h_cluster + h_state, h_action)
+        # self.fc_action1 = nn.Linear(2 * h_cluster, h_action)
         self.fc_action2 = nn.Linear(h_action, 1)
+
+        # self.mode_model = nn.Sequential([nn.Linear(h_cluster+h_state, h_cluster),
+        #                            nn.ReLU(inplace=True),
+        #                            nn.Linear(h_cluster, 1)])
 
     # @profile
     def forward(self, input):
@@ -337,7 +370,6 @@ class SET_DQN(nn.Module):
         # all_means = torch.cat([torch.mean(images[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)])
         # tile_means = torch.cat([all_means[x,...].view(1,-1) for x in image_partition_ids])
 
-
         p_mat = Variable(p_mat.to_dense())
         c_mat = Variable(c_mat.to_dense())
         r_mat = Variable(r_mat.view(-1, 1))
@@ -348,8 +380,9 @@ class SET_DQN(nn.Module):
             images = images.view(n_images, -1)
         elif not self.external_feature:
             images = images.view(-1, 1, 28, 28)
-            images = F.max_pool2d(F.relu(self.conv1(images)), 2)
-            images = F.max_pool2d(F.relu(self.conv2(images)), 2)
+            # images = F.max_pool2d(F.relu(self.conv1(images)), 2)
+            # images = F.max_pool2d(F.relu(self.conv2(images)), 2)
+            images = self.feature_model(images)
             images = images.view(n_images, -1)
 
         all_means = torch.mm(torch.t(p_mat), images)  # of size n_partitions*dim_feature
@@ -365,18 +398,15 @@ class SET_DQN(nn.Module):
         exp_sum = torch.mm(torch.t(p_mat), gate_output_exp)  # of size n_partition*1
         tile_exp_sum = torch.mm(p_mat, exp_sum)
         gate_output = torch.div(gate_output_exp, tile_exp_sum)
-        # assert(torch.equal(gate_output, gate_output2))
 
         cluster_input_shared = torch.mul(images, gate_output)  # of size n_image*dim_feature
         # cluster_input = torch.cat([torch.sum(cluster_input_shared[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)], dim=0)
         cluster_input = torch.mm(torch.t(p_mat), cluster_input_shared)
 
-        # if not torch.equal(cluster_input.data, cluster_input2.data):
-        #     incon = torch.sum(torch.eq(cluster_input.data, cluster_input2.data))
-        #     print 'incon rate', (incon+0.0)/torch.numel(cluster_input.data), torch.numel(cluster_input.data)-incon, torch.numel(cluster_input.data)
 
         cluster_output = F.relu(self.fc_cluster1(cluster_input))
         cluster_output = self.fc_cluster2(cluster_output)
+        # cluster_output = self.res_cluster(cluster_input.view(n_images,64,14,14)).view(n_images,-1)
 
         state_gate = F.relu(self.fc_gate_state1(cluster_output))
         state_gate = self.fc_gate_state2(state_gate)
@@ -386,23 +416,40 @@ class SET_DQN(nn.Module):
         state_gate = torch.div(state_gate_exp, state_gate_exp_sum)
         state = torch.mul(cluster_output, state_gate)
         state = torch.mm(torch.t(c_mat), state)
+
         state = F.relu(self.fc_state1(state))
         state = self.fc_state2(state)
         state = torch.mm(a_mat, state)
 
         cluster_pairs = torch.cat([state, cluster_output[select_i, ...], cluster_output[select_j, ...]], dim=1)
-        q_table = F.relu(self.fc_action1(cluster_pairs))
-        q_table = self.fc_action2(q_table)
+        action_rep = self.fc_action1(cluster_pairs)
+        q_table = self.fc_action2(F.relu(action_rep))
 
         # q_table1 = [nn.Softmax(dim=0)(q_table[action_siblings[x]]) for x in range(batch_size)]
 
         q_exp = torch.exp(q_table)  # of size total_action*1
         q_exp_sum = torch.mm(torch.t(a_mat), q_exp)  # of size batch_size*1
         q_tile_sum = torch.mm(a_mat, q_exp_sum)
-        q_table = torch.div(q_exp, q_tile_sum)
+        q_table = -torch.div(q_exp, q_tile_sum)
+
         q_table_expand = torch.mul(torch.t(a_mat), q_table.view(1, -1))
 
-        return q_table, q_table_expand
+        return q_table, q_table_expand, action_rep
+
+class D_NET(nn.Module):
+    def __init__(self, d_in=1024):
+        super(D_NET, self).__init__()
+        d_h = 1024
+        self.fc1 = nn.Linear(d_in, d_h)
+        self.fc2 = nn.Linear(d_h, d_h)
+        self.fc3 = nn.Linear(d_h, 1)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+
+        return F.sigmoid(x)
 
 
 if __name__ == '__main__':

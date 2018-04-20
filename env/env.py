@@ -181,7 +181,7 @@ def load_mnist(split, path, return_data=False):
 
     logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
     if return_data:
-        return images
+        return images, labels
     else:
         return label_dict, numbers
 
