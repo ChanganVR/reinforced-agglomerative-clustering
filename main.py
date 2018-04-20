@@ -19,11 +19,13 @@ from utils_pad import prep_partition
 from Agent import DQRN
 from Agent import CONV_DQRN
 from Agent import SET_DQN
+from Agent import D_NET
 from env import env
 from itertools import count
 from time import localtime, strftime
 import shutil
 import argparse
+import matplotlib.pyplot as plt
 # from vae_example import VAE
 
 
@@ -103,7 +105,6 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
-
 # @profile
 def select_action(partition, images, phase):
     # input = prepare_sequence(partition, images, volatile=True)
@@ -121,55 +122,108 @@ def select_action(partition, images, phase):
     if phase == 'test':
         # output, _, _ = model(input)
         # action = output[0].data.max(0)[1]
-        output, _ = model(input)
+        output, _, _ = model(input)
         action = output.data.max(0)[1]
     else:
         eps_thresh = eps_end + (eps_start - eps_end) * math.exp(-1. * i_episode / eps_decay)
         if sample > eps_thresh:
-            output, _ = model(input)
+            output, _, _ = model(input)
             action = output.data.max(0)[1]
         else:
             action = LongTensor([random.randrange(n_action)])
 
     return action
 
+def sample_memory(batch_size, domain_memory):
+    replay_batch = domain_memory.sample(batch_size, shuffle=True)
+    replay_partition = [replay[0] for replay in replay_batch]
+    replay_next_partition = [replay[2] for replay in replay_batch]
 
-# @profile
-def optimize():
-    if len(memory) < 20 * batch_size:
+    replay_reward = Variable(torch.cat([replay[3] for replay in replay_batch]))
+    replay_images = torch.cat([Variable(replay[4]) for replay in replay_batch])
+
+    batch_aux, batch_action_cumsum = prep_partition(replay_partition)
+    replay_input = [replay_images] + batch_aux
+    replay_action = torch.cat([replay[1] for replay in replay_batch])
+    replay_action = replay_action + batch_action_cumsum
+
+    non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
+    non_final_images = torch.cat(
+        [Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
+    non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
+    next_train_aux, next_action_cumsum = prep_partition(non_final_next_partition)
+    non_final_input = [non_final_images] + next_train_aux
+
+    return replay_input, replay_action, non_final_input, non_final_mask, replay_reward
+
+def optimize_with_adaption():
+    ada_factor = 1
+    if len(memory) < start_mul * batch_size:
         return
 
-    start = time.time()
-    all_replay = memory.sample(batch_size)
-    for i_replay in range(batch_size):
-        replay = all_replay[i_replay]
+    replay_input, replay_action, non_final_input, non_final_mask, replay_reward = sample_memory(batch_size, memory)
+    q_out, _, train_action = model(replay_input)
+    q = q_out[replay_action]
 
-        replay_partition = replay[0]
-        replay_next_partition = replay[2]
+    next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
 
-        replay_action = Variable(replay[1])
-        replay_reward = Variable(replay[3])
-        replay_images = replay[4]
+    if not DOUBLE_Q:
+        next_output, next_output_expand, next_train_action = model(non_final_input)
+        next_q[non_final_mask] = next_output_expand.max(1)[0]
 
-        replay_input = [[replay_partition], Variable(replay_images)]
-        q = model(replay_input)[0][replay_action]
+    else:
+        ref_argmax = model_ref(non_final_input)[1].max(1)[1]
+        row_idx = torch.arange(ref_argmax.size(0)).type(LongTensor)
+        next_q[non_final_mask] = model(non_final_input)[1][row_idx, ref_argmax]
 
-        if replay_next_partition is None:
-            target_q = replay_reward
-        else:
-            replay_next_input = [[replay_next_partition], Variable(replay_images)]
-            result = model(replay_next_input)[0].max(0)[0]
-            next_q = Variable(result.data, requires_grad=False)
-            target_q = replay_reward + gamma * next_q
+    test_replay_input, _, test_non_final_input, _, _ = sample_memory(batch_size, test_memory)
+    test_out, _, test_action = model(test_replay_input)
+    next_test_out, _, next_test_action = model(test_non_final_input)
 
-        loss = F.smooth_l1_loss(q, target_q)
-        optimizer.zero_grad()
-        loss.backward()
-        for param in model.parameters():
+    optimizer.zero_grad()
+    next_q.volatile = False
+    target_q = replay_reward + gamma * next_q
+    loss = F.smooth_l1_loss(q, target_q)
+
+    # all_test_action = torch.cat([test_action, next_test_action])
+    # all_test_q = torch.cat([test_out, next_test_out])
+    all_test_action = test_action
+    all_train_action = train_action
+    all_test_q = test_out
+
+    d_test = discriminator(all_test_action)
+    d_train = discriminator(all_train_action)
+    # g_target = Variable(torch.ones(d_test.size()).type(FloatTensor))
+    d_all = torch.cat([d_train, d_test])
+    g_target = Variable(torch.cat([torch.ones(d_train.size()), torch.ones(d_test.size())]).type(FloatTensor))
+    # g_loss = F.binary_cross_entropy(d_test, g_target, weight=all_test_q)
+    g_loss = ada_factor*F.binary_cross_entropy(d_all, g_target)
+
+    loss += g_loss
+    loss.backward()
+    for param in model.parameters():
+        if param.grad is not None:
             param.grad.data.clamp(-1, 1)
-        optimizer.step()
+    optimizer.step()
 
-    logger.info('non batch time: ', time.time() - start)
+    if DOUBLE_Q and i_episode % update_ref == 0:
+        for param, param_ref in zip(model.parameters(), model_ref.parameters()):
+            param_ref.data = param_ref.data * (1 - update_factor) + param.data * update_factor
+
+    d_optimizer.zero_grad()
+    # all_train_action = torch.cat([train_action.detach(), next_train_action.detach()])
+    # all_test_action = torch.cat([test_action.detach(), next_test_action.detach()])
+    all_train_action = train_action.detach()
+    all_test_action = test_action.detach()
+
+    # all_q = torch.cat([test_out.detach(), next_test_out.detach(), q_out.detach(), next_output.detach()])
+    d_train = discriminator(all_train_action)
+    d_test = discriminator(all_test_action)
+    d_all = torch.cat([d_train, d_test])
+    d_target = Variable(torch.cat([torch.ones(d_train.size()), torch.zeros(d_test.size())]).type(FloatTensor))
+    d_loss = ada_factor*F.binary_cross_entropy(d_all, d_target)
+    d_loss.backward()
+    d_optimizer.step()
 
 
 # @profile
@@ -185,50 +239,44 @@ def optimize_batch():
     replay_reward = Variable(torch.cat([replay[3] for replay in replay_batch]))
     replay_images = torch.cat([Variable(replay[4]) for replay in replay_batch])
 
-    # replay_input = [replay_partition, replay_images]
     batch_aux, batch_action_cumsum = prep_partition(replay_partition)
     replay_input = [replay_images] + batch_aux
     replay_action = torch.cat([replay[1] for replay in replay_batch])
     replay_action2 = replay_action + batch_action_cumsum
 
-    # q_out, q_out2, _ = model(replay_input)
-    # q = torch.cat([output[replay_action[idx]] for idx, output in enumerate(q_out)])
-    q_out, _ = model(replay_input)
+    q_out, _, train_action = model(replay_input)
     q = q_out[replay_action2]
 
-    non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
-    non_final_images = torch.cat(
-        [Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
-    non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
-    # non_final_input = [non_final_next_partition, non_final_images]
-    next_train_aux, next_action_cumsum = prep_partition(non_final_next_partition)
-    non_final_input = [non_final_images] + next_train_aux
-
-    next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
-
-    if not DOUBLE_Q:
-        # output, output2, output_expand = model(non_final_input)
-        # next_q[non_final_mask] = torch.cat([x.max(0)[0] for x in output])
-        # tmp1 = torch.cat([x.max(0)[0] for x in output])
-        # tmp2 = output_expand.max(1)[0]
-        # assert(torch.equal(tmp1, tmp2))
-
-        _, next_output_expand = model(non_final_input)
-        next_q[non_final_mask] = next_output_expand.max(1)[0]
-
+    if all([replay[2] is None for replay in replay_batch]):
+        target_q = replay_reward
     else:
-        ref_argmax = torch.cat([output.max(0)[1] for output in model(non_final_input)])
-        next_q[non_final_mask] = torch.cat(
-            [output[ref_argmax[idx]] for idx, output in enumerate(model_ref(non_final_input))])
+        non_final_mask = ByteTensor([replay[2] is not None for replay in replay_batch])
+        non_final_images = torch.cat(
+            [Variable(replay[4], volatile=True) for replay in replay_batch if replay[2] is not None])
+        non_final_next_partition = [replay[2] for replay in replay_batch if replay[2] is not None]
+        next_train_aux, next_action_cumsum = prep_partition(non_final_next_partition)
+        non_final_input = [non_final_images] + next_train_aux
 
-    next_q.volatile = False
-    target_q = replay_reward + gamma * next_q
+        next_q = Variable(torch.zeros(batch_size).type(FloatTensor))
+
+        if not DOUBLE_Q:
+            _, next_output_expand, next_train_action = model(non_final_input)
+            next_q[non_final_mask] = next_output_expand.max(1)[0]
+
+        else:
+            ref_argmax = model_ref(non_final_input)[1].max(1)[1]
+            row_idx = torch.arange(ref_argmax.size(0)).type(LongTensor)
+            next_q[non_final_mask] = model(non_final_input)[1][row_idx, ref_argmax]
+
+        next_q.volatile = False
+        target_q = replay_reward + gamma * next_q
 
     loss = F.smooth_l1_loss(q, target_q)
     optimizer.zero_grad()
     loss.backward()
     for param in model.parameters():
-        param.grad.data.clamp(-1, 1)
+        if param.grad is not None:
+            param.grad.data.clamp(-1, 1)
     optimizer.step()
 
     if DOUBLE_Q and i_episode % update_ref == 0:
@@ -251,42 +299,51 @@ def run_oracle_episode(seed):
 
 # @profile
 def run_episode(seed, phase, current_env, print_partition=False):
-    partition, images, _ = current_env.reset(phase, seed=seed, label_as_feature=True)
+    partition, images, _ = current_env.reset(phase, seed=seed, label_as_feature=label_as_feature)
     partition = partition.cluster_assignments
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
 
-    # episode_reward = 0
-    # reward_list = []
     random.seed()
+    purity_history = []
     for t in count():
         action = select_action(partition, images, phase)
         action_pair = pair_from_index(action[0])
         reward, next_partition, purity = current_env.step(action_pair)
+        purity_history.append(purity)
 
         next_partition = next_partition.cluster_assignments
 
         if print_partition:
             logger.info('step %d partition: %s' % (t + 2, next_partition))
 
-        # episode_reward += reward
-        # reward_list.append(reward)
         if t == t_stop:
             final_partition = next_partition
-            next_partition = None
+            if with_terimal_state:
+                next_partition = None
             max_cluster = max([len(p) for p in final_partition])
+
+        if phase == 'adversarial_test':
+            reward = FloatTensor([reward])
+            exp = [partition, action, next_partition, reward, images]
+            test_memory.push(exp)
 
         if phase == 'train':
             reward = FloatTensor([reward])
             exp = [partition, action, next_partition, reward, images]
             memory.push(exp)
-            optimize_batch()
+            if t == t_stop:
+                if not with_adaptation:
+                    optimize_batch()
+                else:
+                    optimize_with_adaption()
 
         if t == t_stop:
             break
 
         partition = next_partition
 
+    # plt.plot(purity_history[::-1])
     return purity, max_cluster
 
 
@@ -330,6 +387,9 @@ def test(split, current_env):
 parser = argparse.ArgumentParser()
 parser.add_argument('--train', action='store_true', default=False)
 parser.add_argument('--test', action='store_true', default=False)
+parser.add_argument('--nolog', action='store_true', default=False)
+parser.add_argument('--logname', action='store', default=None)
+parser.add_argument('--finetune', action='store', default=None)
 parser.add_argument('--input_dir')
 args = parser.parse_args()
 if not args.train and not args.test:
@@ -345,11 +405,20 @@ if args.train:
     log_time = strftime("%Y-%m-%d %H:%M:%S", localtime())
 
     # save all the config file, log file and model weights in this folder
-    output_dir = 'results/{}'.format(log_time)
+    if args.logname is not None:
+        output_dir = 'results/{}'.format(args.logname)
+    else:
+        if not args.nolog:
+            output_dir = 'results/{}'.format(log_time)
+        else:
+            output_dir = 'results/tmp'
+
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
-    else:
-        raise IOError('Output folder exists')
+    # else:
+    #     if not args.nolog:
+    #         raise IOError('Output folder exists')
+
     log_file = os.path.join(output_dir, 'output.log')
     config_file = 'rl.config'
     shutil.copyfile(config_file, os.path.join(output_dir, config_file))
@@ -379,8 +448,15 @@ learning_rate = config.getfloat('rl', 'learning_rate')
 sampling_size = config.getint('rl', 'sampling_size')
 t_stop = config.getint('rl', 't_stop')
 memory_size = config.getint('rl', 'memory_size')
+<<<<<<< HEAD
 dataset = config.get('rl', 'dataset')
 label_as_feature = True
+=======
+test_memory_size = config.getint('rl', 'test_memory_size')
+label_as_feature = False
+with_adaptation = False
+with_terimal_state = True
+>>>>>>> lei-dev
 
 # feature_net = None
 # vae_model = VAE()
@@ -390,7 +466,16 @@ label_as_feature = True
 # model = SET_DQN(external_feature=True)
 model = SET_DQN(label_as_feature=label_as_feature, dataset=dataset)
 model.cuda()
+model_ref = SET_DQN(label_as_feature=label_as_feature)
+model_ref.cuda()
+if args.finetune is not None:
+    model.load_state_dict(torch.load(os.path.join('./results', args.finetune, 'model.pth')))
+    model_ref.load_state_dict(torch.load(os.path.join('./results', args.finetune, 'model.pth')))
+
+discriminator = D_NET()
+discriminator.cuda()
 memory = ReplayMemory(memory_size)
+test_memory = ReplayMemory(test_memory_size)
 
 if args.train:
     logger = logging.getLogger('')
@@ -404,6 +489,7 @@ if args.train:
     val_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='val')
     test_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='test')
     optimizer = optim.RMSprop(model.parameters(), lr=learning_rate)
+    d_optimizer = optim.RMSprop(discriminator.parameters(), lr=1e-3)
     logger.info('first optimized in episode {}'.format(first_opt))
 
     # get_random_performance()
@@ -411,6 +497,8 @@ if args.train:
     for i_episode in range(n_episodes):
 
         seed = i_episode % train_seed_size
+        if with_adaptation:
+            run_episode(seed, phase='adversarial_test', current_env=test_env)
         run_episode(seed, phase='train', current_env=train_env)
 
         if i_episode == 0 or ((i_episode >= first_opt) and (i_episode - first_opt) % epoch_episode_train == 0):
@@ -429,6 +517,20 @@ else:
         raise ValueError('Weights file does not exist')
     model.load_state_dict(torch.load(model_file))
     first_opt = math.ceil((batch_size * start_mul) / (t_stop + 1))
+<<<<<<< HEAD
     test_env = env.Env(data_dir, sampling_size, dataset=dataset, reward='global_purity', split='test')
     run_episode(None, phase='test', current_env=test_env)
     test_env.draw_dendrogram()
+=======
+    val_env = env.Env(data_dir, sampling_size, reward='global_purity', split='val')
+    test_env = env.Env(data_dir, sampling_size, reward='global_purity', split='test')
+    purity_list = []
+    plt.ion()
+    for i in range(1000):
+        purity, _ = run_episode(None, phase='test', current_env=val_env)
+        # purity,_ = run_episode(None, phase='test', current_env=test_env)
+        purity_list.append(purity)
+        print(i, purity, sum(purity_list)/len(purity_list))
+        # test_env.draw_dendrogram()
+        # input()
+>>>>>>> lei-dev
