@@ -1,16 +1,14 @@
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
 from torch.autograd import Variable
-import inspect
+
+from utils.utils_pad import merge_partition
 # from torch.nn.utils import pack_sequence
-from utils_pad import pack_sequence
-from utils_pad import merge_partition
+from utils.utils_pad import pack_sequence
 # from utils_pad import pad_sequence
-from utils_pad import prepare_sequence
-from utils_pad import sort_partition
+from utils.utils_pad import prepare_sequence
+from utils.utils_pad import sort_partition
 
 # from torch.nn.utils.rnn import pack_sequence
 
@@ -285,6 +283,7 @@ class CONV_DQRN(nn.Module):
 
         return q_table
 
+
 class res_block(nn.Module):
     def __init__(self, n_channel):
         super(res_block, self).__init__()
@@ -300,6 +299,7 @@ class res_block(nn.Module):
 
     def forward(self, x):
         return x + self.block(x)
+
 
 class SET_DQN(nn.Module):
     def __init__(self, external_feature=False, label_as_feature=False, dataset='mnist'):
@@ -410,7 +410,6 @@ class SET_DQN(nn.Module):
         # cluster_input = torch.cat([torch.sum(cluster_input_shared[partitions[x]],dim=0).view(1,-1) for x in range(n_partition)], dim=0)
         cluster_input = torch.mm(torch.t(p_mat), cluster_input_shared)
 
-
         cluster_output = F.relu(self.fc_cluster1(cluster_input))
         cluster_output = self.fc_cluster2(cluster_output)
         # cluster_output = self.res_cluster(cluster_input.view(n_images,64,14,14)).view(n_images,-1)
@@ -442,6 +441,7 @@ class SET_DQN(nn.Module):
         q_table_expand = torch.mul(torch.t(a_mat), q_table.view(1, -1))
 
         return q_table, q_table_expand, action_rep
+
 
 class D_NET(nn.Module):
     def __init__(self, d_in=1024):

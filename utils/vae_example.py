@@ -1,5 +1,7 @@
 from __future__ import print_function
+
 import argparse
+
 import torch
 import torch.utils.data
 from torch import nn, optim
@@ -26,16 +28,16 @@ class VAE(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def encode(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x.view(-1,1,28,28))), 2)
+        x = F.max_pool2d(F.relu(self.conv1(x.view(-1, 1, 28, 28))), 2)
         x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = x.view(-1,1024)
+        x = x.view(-1, 1024)
         h1 = self.relu(self.fc1(x))
         return self.fc21(h1), self.fc22(h1)
 
     def extract_feature(self, x):
-        x = F.max_pool2d(F.relu(self.conv1(x.view(-1,1,28,28))), 2)
+        x = F.max_pool2d(F.relu(self.conv1(x.view(-1, 1, 28, 28))), 2)
         x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = x.view(-1,1024)
+        x = x.view(-1, 1024)
 
         return x
 
@@ -86,11 +88,11 @@ def train(epoch):
         if batch_idx % args.log_interval == 0:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader),
-                loss.data[0] / len(data)))
+                       100. * batch_idx / len(train_loader),
+                       loss.data[0] / len(data)))
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
-          epoch, train_loss / len(train_loader.dataset)))
+        epoch, train_loss / len(train_loader.dataset)))
 
 
 def test(epoch):
@@ -105,12 +107,13 @@ def test(epoch):
         if i == 0:
             n = min(data.size(0), 8)
             comparison = torch.cat([data[:n],
-                                  recon_batch.view(args.batch_size, 1, 28, 28)[:n]])
+                                    recon_batch.view(args.batch_size, 1, 28, 28)[:n]])
             save_image(comparison.data.cpu(),
-                     'results/reconstruction_' + str(epoch) + '.png', nrow=n)
+                       'results/reconstruction_' + str(epoch) + '.png', nrow=n)
 
     test_loss /= len(test_loader.dataset)
     print('====> Test set loss: {:.4f}'.format(test_loss))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='VAE MNIST Example')

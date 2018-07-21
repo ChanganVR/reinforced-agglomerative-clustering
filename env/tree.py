@@ -33,7 +33,7 @@ class Tree(object):
         self.reward = reward
         # 1st, 2nd column: indices of merged cluster in ith iteration,
         # 3rd: distance, 4th: number of observation in the new cluster
-        self.linkage = np.ndarray([self.leaf_num-1, 4])
+        self.linkage = np.ndarray([self.leaf_num - 1, 4])
         self.root_cluster_indices = list(range(self.leaf_num))
         self.steps = 0
 
@@ -78,18 +78,20 @@ class Tree(object):
         # update the indices of new cluster
         self.root_cluster_indices = [x for i, x in enumerate(self.root_cluster_indices) if i not in
                                      [self.last_assignment_dict[a], self.last_assignment_dict[b]]]
-        self.root_cluster_indices.append(self.leaf_num+self.steps)
+        self.root_cluster_indices.append(self.leaf_num + self.steps)
         self.steps += 1
 
         return reward
 
     def draw_dendrogram(self):
         # finish rest merging
-        for i in range(self.class_num-1):
+        for i in range(self.class_num - 1):
             self.linkage[self.steps, 0] = self.root_cluster_indices[0]
             self.linkage[self.steps, 1] = self.root_cluster_indices[1]
-            self.linkage[self.steps, 2] = sum([len(x.data) if x.data is not None else 1 for x in self.root.data[:i+2]])
-            self.linkage[self.steps, 3] = sum([len(x.data) if x.data is not None else 1 for x in self.root.data[:i+2]])
+            self.linkage[self.steps, 2] = sum(
+                [len(x.data) if x.data is not None else 1 for x in self.root.data[:i + 2]])
+            self.linkage[self.steps, 3] = sum(
+                [len(x.data) if x.data is not None else 1 for x in self.root.data[:i + 2]])
             # update the indices of new cluster
             self.root_cluster_indices = [x for i, x in enumerate(self.root_cluster_indices) if i not in [0, 1]]
             self.root_cluster_indices.append(self.leaf_num + self.steps + i)
@@ -187,4 +189,3 @@ class Tree(object):
             self.last_assignment_dict[i] = assignments.index(cluster)
 
         return shuffled_assignments
-

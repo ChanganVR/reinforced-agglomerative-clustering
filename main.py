@@ -1,49 +1,42 @@
-from __future__ import print_function
 from __future__ import division
-import numpy as np
-import random
-import math
-import time
-import logging
-from logging import handlers
-import torch
-import os
-import sys
-import configparser
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-from torch.autograd import Variable
-from utils_pad import prepare_sequence
-from utils_pad import prep_partition
-from Agent import DQRN
-from Agent import CONV_DQRN
-from Agent import SET_DQN
-from Agent import D_NET
-from env import env
-from itertools import count
-from time import localtime, strftime
-import shutil
+from __future__ import print_function
+
 import argparse
+import configparser
+import logging
+import math
+import os
+import random
+import shutil
+import sys
+import time
+from itertools import count
+from logging import handlers
+from time import localtime, strftime
+
 import matplotlib.pyplot as plt
-# from vae_example import VAE
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.autograd import Variable
+
+from utils.agent import D_NET
+from utils.agent import SET_DQN
+from env import env
+from utils.utils_pad import prep_partition
 
 
-if 1:
-    FloatTensor = torch.cuda.FloatTensor
-    LongTensor = torch.cuda.LongTensor
-    ByteTensor = torch.cuda.ByteTensor
-else:
-    FloatTensor = torch.FloatTensor
-    LongTensor = torch.LongTensor
-    ByteTensor = torch.ByteTensor
+FloatTensor = torch.cuda.FloatTensor
+LongTensor = torch.cuda.LongTensor
+ByteTensor = torch.cuda.ByteTensor
 
 
 def index_from_pair(action):
     i = max(action.a, action.b)
     j = min(action.a, action.b)
 
-    return LongTensor([int(i*(i-1)/2+j)])
+    return LongTensor([int(i * (i - 1) / 2 + j)])
 
 
 def pair_from_index(index):
@@ -59,7 +52,7 @@ def shuffle_exp(exp):
     perm = list(range(n_cluster))
     random.shuffle(perm)
 
-    perm_partition = [0]*n_cluster
+    perm_partition = [0] * n_cluster
     for i in range(n_cluster):
         perm_partition[perm[i]] = partition[i]
 
@@ -67,7 +60,7 @@ def shuffle_exp(exp):
     a_i = int((2 * action + 0.25) ** 0.5 + 0.5)
     a_j = int(action - a_i * (a_i - 1) / 2)
     a_j, a_i = sorted([perm[a_i], perm[a_j]])
-    perm_action = LongTensor([int(a_i*(a_i-1)/2+a_j)])
+    perm_action = LongTensor([int(a_i * (a_i - 1) / 2 + a_j)])
 
     if next_partition is None:
         perm_next_partition = None
@@ -105,6 +98,7 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
+
 # @profile
 def select_action(partition, images, phase):
     # input = prepare_sequence(partition, images, volatile=True)
@@ -134,6 +128,7 @@ def select_action(partition, images, phase):
 
     return action
 
+
 def sample_memory(batch_size, domain_memory):
     replay_batch = domain_memory.sample(batch_size, shuffle=True)
     replay_partition = [replay[0] for replay in replay_batch]
@@ -155,6 +150,7 @@ def sample_memory(batch_size, domain_memory):
     non_final_input = [non_final_images] + next_train_aux
 
     return replay_input, replay_action, non_final_input, non_final_mask, replay_reward
+
 
 def optimize_with_adaption():
     ada_factor = 1
@@ -197,7 +193,7 @@ def optimize_with_adaption():
     d_all = torch.cat([d_train, d_test])
     g_target = Variable(torch.cat([torch.ones(d_train.size()), torch.ones(d_test.size())]).type(FloatTensor))
     # g_loss = F.binary_cross_entropy(d_test, g_target, weight=all_test_q)
-    g_loss = ada_factor*F.binary_cross_entropy(d_all, g_target)
+    g_loss = ada_factor * F.binary_cross_entropy(d_all, g_target)
 
     loss += g_loss
     loss.backward()
@@ -221,7 +217,7 @@ def optimize_with_adaption():
     d_test = discriminator(all_test_action)
     d_all = torch.cat([d_train, d_test])
     d_target = Variable(torch.cat([torch.ones(d_train.size()), torch.zeros(d_test.size())]).type(FloatTensor))
-    d_loss = ada_factor*F.binary_cross_entropy(d_all, d_target)
+    d_loss = ada_factor * F.binary_cross_entropy(d_all, d_target)
     d_loss.backward()
     d_optimizer.step()
 
@@ -285,14 +281,14 @@ def optimize_batch():
 
 
 def run_oracle_episode(seed):
-    all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop+1)
+    all_assignments, all_actions, images = train_env.correct_episode(seed=seed, steps=t_stop + 1)
     images = np.concatenate(images).reshape((sampling_size, -1))
     images = torch.from_numpy(images).type(FloatTensor)
     all_assignments[0] = all_assignments[0].cluster_assignments
     all_assignments[-1] = None
     for idx in range(t_stop):
         reward = FloatTensor([0])
-        exp = [all_assignments[idx], index_from_pair(all_actions[idx]), all_assignments[idx+1], reward, images]
+        exp = [all_assignments[idx], index_from_pair(all_actions[idx]), all_assignments[idx + 1], reward, images]
         memory.push(exp)
         optimize_batch()
 
@@ -369,7 +365,7 @@ def test(split, current_env):
     if split == 'train':
         test_seeds = range(test_episodes)
     else:
-        test_seeds = [random.random()+train_seed_size for _ in range(test_episodes)]
+        test_seeds = [random.random() + train_seed_size for _ in range(test_episodes)]
 
     test_purity = [0] * test_episodes
     max_clusters = []
@@ -390,7 +386,7 @@ parser.add_argument('--test', action='store_true', default=False)
 parser.add_argument('--nolog', action='store_true', default=False)
 parser.add_argument('--logname', action='store', default=None)
 parser.add_argument('--finetune', action='store', default=None)
-parser.add_argument('--input_dir')
+parser.add_argument('--input_dir', type=str)
 args = parser.parse_args()
 if not args.train and not args.test:
     raise ValueError('Train or test flag has to be specified')
@@ -431,7 +427,7 @@ else:
 config = configparser.RawConfigParser()
 config.read(config_file)
 gamma = config.getfloat('rl', 'gamma')
-correct_episode_rate = config.getfloat('rl','correct_episode_rate')
+correct_episode_rate = config.getfloat('rl', 'correct_episode_rate')
 eps_start = config.getfloat('rl', 'eps_start')
 eps_end = config.getfloat('rl', 'eps_end')
 eps_decay = config.getfloat('rl', 'eps_decay')
@@ -523,6 +519,6 @@ else:
         purity, _ = run_episode(None, phase='test', current_env=val_env)
         # purity,_ = run_episode(None, phase='test', current_env=test_env)
         purity_list.append(purity)
-        print(i, purity, sum(purity_list)/len(purity_list))
+        print(i, purity, sum(purity_list) / len(purity_list))
         # test_env.draw_dendrogram()
         # input()

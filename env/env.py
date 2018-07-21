@@ -1,11 +1,10 @@
 from __future__ import division
-import os
-import struct
-import numpy as np
-from collections import defaultdict
-import random
-from .tree import Tree
 import logging
+import os
+import random
+from collections import defaultdict
+import numpy as np
+from .tree import Tree
 
 logger = logging.getLogger()
 
@@ -148,6 +147,7 @@ def load_mnist(split, path, return_data=False):
     with the second element being the label and the first element
     being a numpy.uint8 2D array of pixel data for the given image.
     """
+
     def read_file(image_file, label_file):
         # Load everything in some numpy arrays
         with open(label_file, 'rb') as fo:
@@ -181,7 +181,8 @@ def load_mnist(split, path, return_data=False):
         if labels[i] in numbers:
             label_dict[labels[i]].append(images[i])
 
-    logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
+    logger.info(
+        "Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
     if return_data:
         return images, labels
     else:
@@ -194,11 +195,12 @@ def load_cifar(split, data_dir, return_data=False):
         with open(file, 'rb') as fo:
             dict = pickle.load(fo, encoding='bytes')
         return dict[b'data'], np.asarray(dict[b'labels'])
+
     if split == 'train':
         image_list = []
         labels_list = []
         for i in range(1, 6):
-            file_path = os.path.join(data_dir, 'cifar-10-batches-py', 'data_batch_'+str(i))
+            file_path = os.path.join(data_dir, 'cifar-10-batches-py', 'data_batch_' + str(i))
             images, labels = unpickle(file_path)
             image_list.append(images)
             labels_list.append(labels)
@@ -229,7 +231,8 @@ def load_cifar(split, data_dir, return_data=False):
     for i in range(labels.shape[0]):
         label_dict[labels[i]].append(images[i])
 
-    logger.info("Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
+    logger.info(
+        "Number of images: {}".format(' '.join([str(len(label_dict[key])) for key in sorted(label_dict.keys())])))
     if return_data:
         return images, labels
     else:

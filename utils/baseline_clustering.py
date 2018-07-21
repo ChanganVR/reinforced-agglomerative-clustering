@@ -1,15 +1,14 @@
-from torchvision import models, transforms
-import torch
-from torch.utils.data import Dataset
-import torch.nn as nn
-import torch.optim as optim
-from torch.optim import lr_scheduler
-from torch.autograd import Variable
-import numpy as np
 import os
+import numpy as np
+import torch
+import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 from sklearn.cluster import KMeans, AgglomerativeClustering
 from sklearn.metrics import accuracy_score
+from torch.autograd import Variable
+from torch.utils.data import Dataset
+from torchvision import transforms
 
 
 class LeNet(nn.Module):
@@ -20,7 +19,7 @@ class LeNet(nn.Module):
         super(LeNet, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 5)
         self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16*5*5, 120)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
         self.fc2 = nn.Linear(120, 84)
         self.fc3 = nn.Linear(84, num_classes)
 
@@ -43,6 +42,7 @@ def load_mnist(path):
     with the second element being the label and the first element
     being a numpy.uint8 2D array of pixel data for the given image.
     """
+
     def read_file(image_file, label_file):
         # Load everything in some numpy arrays
         with open(label_file, 'rb') as fo:
@@ -82,7 +82,7 @@ class Mnist(Dataset):
         return len(self.images)
 
     def __getitem__(self, item):
-        return self.transform(self.images[item]), torch.LongTensor([int(self.labels[item]-min(self.numbers))])
+        return self.transform(self.images[item]), torch.LongTensor([int(self.labels[item] - min(self.numbers))])
 
 
 def train(model, data_loaders, dataset_sizes, criterion, optimizer, num_epochs, clustering_algorithm, test_sample):
@@ -150,7 +150,7 @@ def test(model, data_loaders, clustering_algorithm, test_sample, split, raw_pixe
             clustering = AgglomerativeClustering(n_clusters=cluster_num).fit(test_features)
         purity = purity_score(test_labels, clustering.labels_)
         purity_list.append(purity)
-    avg_purity = sum(purity_list)/len(purity_list)
+    avg_purity = sum(purity_list) / len(purity_list)
     return avg_purity
 
 
@@ -161,7 +161,7 @@ def purity_score(y_true, y_pred):
     # We set the number of bins to be n_classes+2 so that
     # we count the actual occurrence of classes between two consecutive bin
     # the bigger being excluded [bin_i, bin_i+1[
-    bins = np.concatenate((labels, [np.max(labels)+1]), axis=0)
+    bins = np.concatenate((labels, [np.max(labels) + 1]), axis=0)
 
     for cluster in np.unique(y_pred):
         hist, _ = np.histogram(y_true[y_pred == cluster], bins=bins)
